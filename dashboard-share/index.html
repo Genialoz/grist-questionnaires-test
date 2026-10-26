@@ -5,7 +5,7 @@
 <p>Ouverture du tableau de bord…</p>
 <script>
 (()=>{
-  const TARGET="https://grist.numerique.gouv.fr/o/docs/wquFLHYyyedo/Gristionnaire/p/50?style=singlePage";
+  const TARGET="https://grist.numerique.gouv.fr/o/docs/hPbcNzv8BmMc/Gristionnaire-TEST/p/50?style=singlePage";
   const token=String(new URLSearchParams(location.search).get("token")||"").trim();
   if(!/^Dashboard_[A-Za-z0-9_-]+$/.test(token)){document.body.innerHTML="<p>Ce lien de tableau de bord n’est pas valide.</p>";return;}
   try{localStorage.setItem("gristionnaire.dashboardShareGrant",JSON.stringify({token,ts:Date.now(),source:"share-link"}));}
