@@ -17,7 +17,7 @@ Activez ensuite GitHub Pages dans **Settings → Pages** :
 
 Après publication, l’URL du premier widget sera normalement :
 
-`https://genialoz.github.io/grist-questionnaires/questionnaire/`
+`https://genialoz.github.io/grist-questionnaires-test/questionnaire/`
 
 ### Ajouter dans Grist
 
