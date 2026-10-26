@@ -1,7 +1,7 @@
 (function(){
   if (document.querySelector('.gristionnaire-module-nav')) return;
-  const BASE='https://grist.numerique.gouv.fr/o/docs/wquFLHYyyedo/Gristionnaire';
-  const HOME='https://genialoz.github.io/grist-questionnaires/navigation/';
+  const BASE='https://grist.numerique.gouv.fr/o/docs/hPbcNzv8BmMc/Gristionnaire-TEST';
+  const HOME='https://genialoz.github.io/grist-questionnaires-test/navigation/';
   const modules=[
     ['Concepteur',`${BASE}/p/39?style=singlePage`],
     ['Questionnaire',`${BASE}/p/38?style=singlePage&AdminPreview_=1`],
