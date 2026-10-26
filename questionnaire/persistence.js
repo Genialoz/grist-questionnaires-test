@@ -68,7 +68,7 @@ export function hydrateResponse(rows,definition,reponseCode){
     const parentRaw=codeOf(el.Parent_Code);
     const parentEl=parentRaw ? elements.find(x=>String(x.id)===parentRaw || codeOf(x.Element_Code)===parentRaw) : null;
     const bundle=answersFor(el);
-    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",readOnlyImport:isTrue(el.Lecture_seule_import),readOnlyQuestions:bundle.readOnlyQuestions,answers:bundle.answers});
+    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,periodeCode:String(el.Periode_Code??""),parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",readOnlyImport:isTrue(el.Lecture_seule_import),readOnlyQuestions:bundle.readOnlyQuestions,answers:bundle.answers});
   }
   const principalBundle=principal?answersFor(principal):{answers:{},readOnlyQuestions:{}};
   return {response,principalAnswers:principalBundle.answers,principalReadOnlyQuestions:principalBundle.readOnlyQuestions,principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};

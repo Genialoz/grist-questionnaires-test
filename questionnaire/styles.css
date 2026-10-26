@@ -165,3 +165,10 @@ textarea { min-height:110px; resize:vertical; }
 
 /* Présentation par défaut ; les couleurs configurées restent prioritaires. */
 body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55}#app{max-width:980px;padding:28px 24px 48px}.card{border-radius:18px;box-shadow:0 8px 32px #25233d07}.section,.repeatable{border-radius:13px}.field{margin-bottom:22px}input:not([type=checkbox]):not([type=radio]),select,textarea{border-radius:9px;min-height:42px}button,.btn{border-radius:9px;min-height:42px}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #8e86e5;outline-offset:3px}.progress{border-radius:20px;overflow:hidden}@media(max-width:600px){#app{padding:16px 12px 32px}.card{padding:18px}}
+
+/* Mode périodes TEST V2 : affichage informatif, sans archivage. */
+.fiche-period-selector{max-width:100%;padding:12px 14px;margin:12px 0;border:1px solid #d8e0ed;border-radius:8px;background:#f8fafc}
+.fiche-period-selector label{display:block;font-weight:600;margin-bottom:6px}
+.fiche-period-selector select{max-width:100%;min-width:180px;padding:7px}
+.fiche-period-selector .help{margin:6px 0 0;font-size:.85em}
+.fiche-period-badge{display:inline-block;margin:0 6px;padding:2px 7px;border-radius:5px;background:#edf2ff;font-size:.76em;font-weight:500}
