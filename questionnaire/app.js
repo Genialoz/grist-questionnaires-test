@@ -1217,6 +1217,7 @@ function render() {
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${periodSelectionHtml(state.periodConfig,state.selectedPeriod)}
+    ${state.periodConfig?.enabled && state.selectedPeriod && state.selectedPeriod!=="__historique__" ? `<div class="fiche-period-review"><button type="button" class="btn btn-small" data-check-period>Vérifier les fiches de cette période</button><p class="help">Contrôle sans validation ni verrouillage. Les autres périodes ne sont pas prises en compte.</p></div>` : ""}
     ${tocHtml}
     ${showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
     <h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
@@ -1259,6 +1260,20 @@ function render() {
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   updateMatrixTotals(root);
+  root.querySelector("[data-check-period]")?.addEventListener("click",()=>{
+    if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de vérifier la période."));return;}
+    // N'évalue que les types de fiches : les questions générales ne constituent pas
+    // une validation annuelle, car elles sont partagées entre toutes les périodes.
+    const fichePages=vm.pages.map(p=>({...p,sections:[]}));
+    const check=validateWholeResponse(state.definition,{pages:fichePages},state.answers,fichesForCurrentPeriod(),validateQuestion,visibleFicheQuestions,ficheTypeVisible);
+    const issues=Object.values(check.fiches).flatMap(v=>typeof v==="string"?[v]:Object.values(v??{})).filter(Boolean);
+    const label=periodLabel(state.periodConfig,state.selectedPeriod);
+    state.saveError="";
+    state.statusMessage=issues.length
+      ? `Période ${label} : ${issues.length} point(s) à compléter dans les fiches ou sous-fiches. ${issues.slice(0,3).join(" · ")}${issues.length>3?" …":""}`
+      : `Période ${label} : les fiches et sous-fiches satisfont aux contrôles de saisie. Ceci ne valide pas la période.`;
+    render();
+  });
   root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
     e.preventDefault();
     e.stopPropagation();
