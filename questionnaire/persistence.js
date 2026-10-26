@@ -1,0 +1,127 @@
+import {codeOf, isTrue, sortByOrder} from "../shared/grist-common.js";
+import {validateConfiguredQuestion} from "./validation.js";
+
+const EMPTY={Valeur_texte:null,Valeur_nombre:null,Valeur_date:null,Valeur_booleen:null,Valeur_reference_Code:null,Valeur_structure_Code:null};
+function qtype(q){return String(q?.Type_question ?? q?.Type ?? "").trim().toLowerCase();}
+function refCode(q){return codeOf(q?.Referentiel_Code);}
+function refSource(q,ctx){const rc=refCode(q); const r=(ctx?.referentials??[]).find(x=>codeOf(x.Referentiel_Code)===rc || String(x.id)===rc); return String(r?.Type_source??"VALEURS_REFERENTIELS").toUpperCase();}
+function hasDirectChoices(q,ctx){const qc=codeOf(q?.Question_Code), qid=String(q?.id??""); return (ctx?.choices??[]).some(c=>{const raw=codeOf(c.Question_Code); return raw===qc || (qid && String(c.Question_Code)===qid);});}
+export function serializeAnswer(question,value,context={}){
+  const out={...EMPTY}; if(value===""||value==null) return out;
+  const t=qtype(question);
+  if(refCode(question)){
+    if(refSource(question,context)==="STRUCTURES") out.Valeur_structure_Code=codeOf(value); else out.Valeur_reference_Code=codeOf(value);
+    return out;
+  }
+  if(hasDirectChoices(question,context)){out.Valeur_texte=codeOf(value);return out;}
+  if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique")||t.includes("montant")){out.Valeur_nombre=Number(value);return out;}
+  if(t.includes("date")){out.Valeur_date=value;return out;}
+  if(t.includes("bool")||t.includes("oui/non")){out.Valeur_booleen=isTrue(value);return out;}
+  out.Valeur_texte=String(value); return out;
+}
+function storedRefCode(value,rows,codeCol){
+  const raw=codeOf(value);
+  const found=(rows??[]).find(r=>String(r.id)===raw || codeOf(r?.[codeCol])===raw);
+  return found ? codeOf(found[codeCol]) : raw;
+}
+export function deserializeAnswer(question,row,context={}){
+  if(!row) return ""; const t=qtype(question);
+  if(refCode(question)) {
+    if(refSource(question,context)==="STRUCTURES") return storedRefCode(row.Valeur_structure_Code,context.structures,"Structure_Code");
+    return storedRefCode(row.Valeur_reference_Code,context.referentialValues,"ValeurRef_Code");
+  }
+  if(hasDirectChoices(question,context)) return row.Valeur_texte ?? "";
+  if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique")||t.includes("montant")) return row.Valeur_nombre ?? "";
+  if(t.includes("date")) return row.Valeur_date ?? "";
+  if(t.includes("bool")||t.includes("oui/non")) return row.Valeur_booleen ?? "";
+  return row.Valeur_texte ?? "";
+}
+function sameRef(value,row,codeCol){const raw=codeOf(value); return raw===codeOf(row?.[codeCol]) || String(value)===String(row?.id);}
+export function hydrateResponse(rows,definition,reponseCode){
+  const response=(rows.REPONSES??[]).find(r=>codeOf(r.Reponse_Code)===codeOf(reponseCode)||String(r.id)===String(reponseCode))??null;
+  if(!response) return {response:null,principalAnswers:{},fiches:{},revisions:{response:null,elements:{}}};
+  const elements=(rows.ELEMENTS_REPONSE??[]).filter(e=>sameRef(e.Reponse_Code,response,"Reponse_Code"));
+  const values=rows.VALEURS_REPONSE??[]; const questions=definition.questions??[];
+  const selections=rows.SELECTIONS_REPONSE??[];
+  const multi=q=>{const t=qtype(q);return t.includes("case")||t.includes("checkbox")||((t.includes("liste")||t.includes("déroul")||t.includes("deroul"))&&isTrue(q?.Selection_multiple));};
+  const selectedCode=s=>{
+    if(s.Choix_Code){const raw=codeOf(s.Choix_Code),row=(definition.choices??[]).find(x=>String(x.id)===raw||codeOf(x.Choix_Code)===raw);return row?codeOf(row.Choix_Code):raw;}
+    if(s.ValeurRef_Code){const raw=codeOf(s.ValeurRef_Code),row=(definition.referentialValues??[]).find(x=>String(x.id)===raw||codeOf(x.ValeurRef_Code)===raw);return row?codeOf(row.ValeurRef_Code):raw;}
+    if(s.Structure_Code){const raw=codeOf(s.Structure_Code),row=(definition.structures??[]).find(x=>String(x.id)===raw||codeOf(x.Structure_Code)===raw);return row?codeOf(row.Structure_Code):raw;}
+    return "";
+  };
+  const answersFor=el=>{const out={},readOnlyQuestions={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(!q)continue;
+    const qc=codeOf(q.Question_Code);if(isTrue(v.Lecture_seule_import))readOnlyQuestions[qc]=true;
+    if(isTrue(q.Est_ligne_matrice)){const parentRaw=codeOf(q.Question_parente_Code),parent=questions.find(x=>String(x.id)===parentRaw||codeOf(x.Question_Code)===parentRaw);if(!parent)continue;const pc=codeOf(parent.Question_Code),rc=qc,pt=qtype(parent);out[pc]??={};if(isTrue(v.Lecture_seule_import))readOnlyQuestions[pc]=true;
+      if(pt.includes("radio")||pt.includes("checkbox")){const selected=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);out[pc][rc]=pt.includes("checkbox")?selected:(selected[0]??v.Valeur_texte??"");}
+      else {const colRaw=codeOf(v.ColonneMatrice_Code),col=(definition.matrixColumns??[]).find(c=>String(c.id)===colRaw||codeOf(c.ColonneMatrice_Code)===colRaw);if(!col)continue;const cc=codeOf(col.ColonneMatrice_Code);out[pc][rc]??={};out[pc][rc][cc]=pt.includes("nombre")||pt.includes("numérique")||pt.includes("numerique")?(v.Valeur_nombre??""):(v.Valeur_texte??"");}
+      continue;}
+    if(multi(q))out[qc]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[qc]=deserializeAnswer(q,v,definition);
+  } return {answers:out,readOnlyQuestions};};
+  const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
+  const fiches={};
+  for(const el of sortByOrder(elements.filter(e=>["fiche","sous-fiche"].includes(String(e.Type_element??"").toLowerCase())&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
+    const rawTc=codeOf(el.TypeFiche_Code);
+    const ficheType=(definition.ficheTypes??[]).find(t=>String(t.id)===rawTc || codeOf(t.TypeFiche_Code)===rawTc);
+    const tc=ficheType ? codeOf(ficheType.TypeFiche_Code) : rawTc;
+    if(!tc) continue;
+    const parentRaw=codeOf(el.Parent_Code);
+    const parentEl=parentRaw ? elements.find(x=>String(x.id)===parentRaw || codeOf(x.Element_Code)===parentRaw) : null;
+    const bundle=answersFor(el);
+    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",readOnlyImport:isTrue(el.Lecture_seule_import),readOnlyQuestions:bundle.readOnlyQuestions,answers:bundle.answers});
+  }
+  const principalBundle=principal?answersFor(principal):{answers:{},readOnlyQuestions:{}};
+  return {response,principalAnswers:principalBundle.answers,principalReadOnlyQuestions:principalBundle.readOnlyQuestions,principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};
+}
+export function assertRevision(expected,actual){if(Number(expected??0)!==Number(actual??0)){const e=new Error("Une version plus récente de cette réponse existe. Rechargez le questionnaire avant de continuer.");e.code="revision_conflict";throw e;} return true;}
+export function validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible=()=>true){
+  const errors={principal:{},fiches:{}};
+  for(const p of viewModel.pages)for(const s of p.sections)for(const q of s.questions){
+    const c=codeOf(q.Question_Code),m=validateConfiguredQuestion(q,answers[c],definition,answers,validateQuestion);
+    if(m)errors.principal[c]=m;
+  }
+  const identity=f=>String(f?.elementId??f?.elementCode??'');
+  const walk=(types,parent=null,context=answers,path=new Set())=>{
+    for(const type of types??[]){
+      if(!ficheTypeVisible(type,definition,context))continue;
+      if(path.has(type.code)){errors.fiches[type.code]='La hiérarchie des fiches contient une boucle.';continue;}
+      const nextPath=new Set(path);nextPath.add(type.code);
+      const all=fiches[type.code]??[],parentKey=identity(parent);
+      const list=parent?all.filter(f=>String(f.parentElementId??'')===parentKey||(parent.elementCode&&String(f.parentElementCode??'')===String(parent.elementCode))):all;
+      const countKey=parent?`${type.code}@${parentKey}`:type.code;
+      const singular=String(type.labelSingular||'fiche').toLowerCase(),plural=String(type.labelPlural||'fiches').toLowerCase();
+      if(list.length<type.minimum)errors.fiches[countKey]=`Vous devez saisir au moins ${type.minimum} ${type.minimum>1?plural:singular}.`;
+      else if(type.maximum!=null&&list.length>type.maximum)errors.fiches[countKey]=`Vous ne pouvez pas saisir plus de ${type.maximum} ${type.maximum>1?plural:singular}.`;
+      for(const f of list){
+        const merged={...context,...(f.answers??{})},index=all.indexOf(f),key=`${type.code}:${index}`;
+        for(const q of visibleFicheQuestions(type,definition,merged)){
+          const c=codeOf(q.Question_Code),m=validateConfiguredQuestion(q,f.answers?.[c],definition,merged,validateQuestion);
+          if(m)(errors.fiches[key]??={})[c]=m;
+        }
+        walk(type.children,f,merged,nextPath);
+      }
+    }
+  };
+  for(const p of viewModel.pages)walk(p.repeatableTypes);
+  return errors;
+}
+
+export function addedRecordId(result){
+  const value=Array.isArray(result) ? result[0] : result;
+  if(Number.isInteger(value) && value>0) return value;
+  if(value && Number.isInteger(value.id) && value.id>0) return value.id;
+  throw new Error("Grist n’a pas renvoyé l’identifiant de la ligne créée.");
+}
+
+export function generateResumeToken(cryptoLike=globalThis.crypto){
+  if(!cryptoLike?.getRandomValues) throw new Error("Génération sécurisée du lien de reprise indisponible.");
+  const bytes=new Uint8Array(32); cryptoLike.getRandomValues(bytes);
+  let binary=""; for(const b of bytes) binary+=String.fromCharCode(b);
+  const base64=typeof btoa==="function" ? btoa(binary) : Buffer.from(bytes).toString("base64");
+  return base64.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/," ").trim();
+}
+export function findResponseByResumeToken(responses,token){
+  const wanted=String(token??"").trim(); if(!wanted)return null;
+  const matches=(responses??[]).filter(r=>String(r.Jeton_reprise??"")===wanted && !isTrue(r.Supprime_logiquement));
+  return matches.length===1?matches[0]:null;
+}
