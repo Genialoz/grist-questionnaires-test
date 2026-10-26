@@ -39,8 +39,8 @@ export function periodLabel(config,codeValue){
 export function periodSelectionHtml(config,selected){
  if(!config)return "";
  if(!config.enabled)return `<section class="fiche-period-selector"><p class="help">${escapeHtml(config.reason||"Configuration des périodes indisponible.")}</p></section>`;
- const opts=config.selectable.map(p=>`<option value="${escapeHtml(p.Periode_Code)}"${text(p.Periode_Code)===text(selected)?" selected":""}>${escapeHtml(p.Libelle)}</option>`).join("");
- return `<section class="fiche-period-selector"><label for="respondent-period">Période des nouvelles fiches</label><select id="respondent-period" data-period-select ${config.selectable.length?"":"disabled"}><option value="">${config.selectable.length?"Choisir une période":"Aucune période ouverte : modifier le statut dans le Concepteur"}</option>${opts}</select><p class="help">Les fiches existantes ne sont pas déplacées. Le classement historique est conservé.</p></section>`;
+ const opts=config.periods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}"${text(p.Periode_Code)===text(selected)?" selected":""}>${escapeHtml(p.Libelle)}${norm(p.Statut)==="cloturee"?" — archive":norm(p.Statut)==="prevue"?" — à venir":""}</option>`).join("");
+ return `<section class="fiche-period-selector"><label for="respondent-period">Période à consulter / renseigner</label><select id="respondent-period" data-period-select ${config.periods.length?"":"disabled"}><option value="">${config.periods.length?"Choisir une période":"Aucune période disponible"}</option>${opts}<option value="__historique__"${selected==="__historique__"?" selected":""}>Sans période (historique)</option></select><p class="help">Les périodes clôturées sont consultables en lecture seule. Les anciennes fiches restent dans « Sans période ».</p></section>`;
 }
 export function periodForNewFiche(config,selected,parentElementId,elements=[]){
  if(!config?.enabled)return "";
@@ -48,4 +48,21 @@ export function periodForNewFiche(config,selected,parentElementId,elements=[]){
  const p=config.selectable.find(p=>text(p.Periode_Code)===text(selected));
  if(!p)throw Error("Sélectionnez une période ouverte avant d'ajouter une nouvelle fiche.");
  return text(p.Periode_Code);
+}
+
+// La protection est basée sur la période réelle de la fiche, jamais sur la seule sélection à l’écran.
+export function periodEditable(config, periodCode) {
+ if (!config?.enabled) return true;
+ if (!periodCode) return false; // historique : ne pas modifier sans migration explicite
+ const p=config.periods.find(x=>text(x.Periode_Code)===text(periodCode));
+ if (!p || norm(p.Statut)!=="ouverte") return false;
+ const today=new Date().toISOString().slice(0,10);
+ const date=v=>{if(typeof v==="number"&&Number.isFinite(v))return new Date(v*1000).toISOString().slice(0,10);return text(v).slice(0,10)};
+ const open=date(p.Date_ouverture),close=date(p.Date_cloture);
+ return (!open || today>=open)&&(!close || today<=close);
+}
+export function periodMatches(config, selected, fiche){
+ if(!config?.enabled)return true;
+ const codeValue=text(fiche?.periodeCode);
+ return selected==="__historique__"?!codeValue:codeValue===text(selected);
 }
