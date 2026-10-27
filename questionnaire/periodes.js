@@ -44,7 +44,7 @@ export function periodSelectionHtml(config,selected){
  if(!config || config.protectArchives)return "";
  if(!config.enabled)return `<section class="fiche-period-selector"><p class="help">${escapeHtml(config.reason||"Configuration des périodes indisponible.")}</p></section>`;
  const opts=config.periods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}"${text(p.Periode_Code)===text(selected)?" selected":""}>${escapeHtml(p.Libelle)}${norm(p.Statut)==="cloturee"?" — archive":norm(p.Statut)==="prevue"?" — à venir":""}</option>`).join("");
- return `<section class="fiche-period-selector"><label for="respondent-period">Période à consulter / renseigner</label><select id="respondent-period" data-period-select ${config.periods.length?"":"disabled"}><option value="">${config.periods.length?"Choisir une période":"Aucune période disponible"}</option>${opts}<option value="__all__"${selected==="__all__"?" selected":""}>Toutes les périodes</option><option value="__historique__"${selected==="__historique__"?" selected":""}>Sans période (historique)</option></select><p class="help">Les périodes clôturées sont consultables en lecture seule. Les anciennes fiches restent dans « Sans période ».</p></section>`;
+ return `<section class="fiche-period-selector"><label for="respondent-period">Période à consulter / renseigner</label><select id="respondent-period" data-period-select ${config.periods.length?"":"disabled"}><option value="">${config.periods.length?"Choisir une période":"Aucune période disponible"}</option>${opts}<option value="__all__"${selected==="__all__"?" selected":""}>Toutes les périodes</option><option value="__historique__"${selected==="__historique__"?" selected":""}>Sans période (historique)</option></select><p class="help">Les périodes clôturées sont consultables ; les corrections sont possibles uniquement si le concepteur les a autorisées. Les anciennes fiches restent dans « Sans période ».</p></section>`;
 }
 export function periodForNewFiche(config,selected,parentElementId,elements=[]){
  if(!config?.enabled)return "";
@@ -59,7 +59,9 @@ export function periodEditable(config, periodCode) {
  if (!config?.enabled && !config?.protectArchives) return true;
  if (!periodCode) return !config?.enabled; // historique : ne pas modifier sans migration explicite
  const p=config.periods.find(x=>text(x.Periode_Code)===text(periodCode));
- if (!p || norm(p.Statut)!=="ouverte") return false;
+ if (!p) return false;
+ if(norm(p.Statut)==="cloturee")return p.Modification_archives_autorisee===true || p.Modification_archives_autorisee===1;
+ if(norm(p.Statut)!=="ouverte")return false;
  const today=new Date().toISOString().slice(0,10);
  const date=v=>{if(typeof v==="number"&&Number.isFinite(v))return new Date(v*1000).toISOString().slice(0,10);return text(v).slice(0,10)};
  const open=date(p.Date_ouverture),close=date(p.Date_cloture);
@@ -69,4 +71,15 @@ export function periodMatches(config, selected, fiche){
  if(!config?.enabled)return true;
  const codeValue=text(fiche?.periodeCode);
  return selected==="__all__"?true:selected==="__historique__"?!codeValue:codeValue===text(selected);
+}
+
+// Actions destructrices et créations interdites sur toute période non ouverte, même déverrouillée.
+export function periodCanChangeStructure(config, periodCode){
+ if(!config?.enabled&&!config?.protectArchives)return true;
+ if(!periodCode)return !config?.enabled;
+ const p=config.periods.find(x=>text(x.Periode_Code)===text(periodCode));
+ if(!p || norm(p.Statut)!=="ouverte")return false;
+ const today=new Date().toISOString().slice(0,10);
+ const asDate=v=>typeof v==="number"&&Number.isFinite(v)?new Date(v*1000).toISOString().slice(0,10):text(v).slice(0,10);
+ return (!asDate(p.Date_ouverture)||today>=asDate(p.Date_ouverture))&&(!asDate(p.Date_cloture)||today<=asDate(p.Date_cloture));
 }
