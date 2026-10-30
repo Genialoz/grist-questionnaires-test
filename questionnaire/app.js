@@ -1246,7 +1246,7 @@ function render() {
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${showResumeCopy?`<button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button>`:""}${showManualSave?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
-    ${periodSelectionHtml(state.periodConfig,state.selectedPeriod,state.fiches)}
+    ${periodSelectionHtml(state.periodConfig,state.selectedPeriod,state.fiches,vm.pages)}
     ${archiveSpace?"":tocHtml}
     ${!archiveSpace&&showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
     ${archiveSpace?"":`<h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>`}
@@ -1295,8 +1295,8 @@ function render() {
     // Les cartes d'archives sont sur l'accueil ; les fiches peuvent être sur une autre page.
     if(next==="__archives__" || home){state.pageIndex=0;state.pageHistory=[];}
     else if(next==="__historique__" || state.periodConfig?.periods?.some(p=>String(p.Periode_Code)===String(next))){
-      const firstFichePage=vm.pages.findIndex(p=>(p.repeatableTypes??[]).length>0);
-      if(firstFichePage>=0 && !(vm.pages[state.pageIndex]?.repeatableTypes??[]).length){
+      const firstFichePage=vm.pages.findIndex(p=>(p.repeatableTypes??[]).some(type=>(state.fiches[type.code]||[]).some(f=>!f.parentElementId&&periodMatches(state.periodConfig,next,f))));
+      if(firstFichePage>=0){
         state.pageIndex=firstFichePage;
         state.pageHistory=[];
       }
@@ -1308,6 +1308,12 @@ function render() {
     changePeriodView(isArchive?"__archives__":(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||""),{home:!isArchive});
   }));
   root.querySelectorAll("[data-archive-open]").forEach(el=>el.addEventListener("click",()=>changePeriodView(el.dataset.archiveOpen)));
+  root.querySelectorAll("[data-archive-page]").forEach(el=>el.addEventListener("click",()=>{
+    if(!closeReadonlyArchiveEditor())return;
+    const target=Number(el.dataset.archivePage);
+    if(!Number.isInteger(target)||target<0||target>=vm.pages.length)return;
+    state.pageIndex=target;state.pageHistory=[];state.ficheListUi={};render();
+  }));
   root.querySelector("[data-archive-back]")?.addEventListener("click",()=>changePeriodView("__archives__"));
   root.querySelector("[data-archive-home]")?.addEventListener("click",()=>{
     if(!closeReadonlyArchiveEditor())return;

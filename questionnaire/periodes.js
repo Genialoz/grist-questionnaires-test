@@ -41,7 +41,7 @@ export function periodLabel(config,codeValue){
   return text(config?.periods?.find(p=>text(p.Periode_Code)===text(codeValue))?.Libelle||codeValue);
 }
 // Navigation à deux espaces : les archives ne sont plus mélangées aux périodes ouvertes.
-export function periodSelectionHtml(config, selected, fiches={}){
+export function periodSelectionHtml(config, selected, fiches={}, pages=[]){
  if(!config || config.protectArchives)return "";
  if(!config.enabled)return `<section class="fiche-period-selector"><p class="help">${escapeHtml(config.reason||"Configuration des périodes indisponible.")}</p></section>`;
  const open=config.periods.filter(p=>norm(p.Statut)==="ouverte");
@@ -49,14 +49,21 @@ export function periodSelectionHtml(config, selected, fiches={}){
  const isArchive=selected==="__archives__" || selected==="__historique__" || closed.some(p=>text(p.Periode_Code)===text(selected));
  const cardsCount=periodCode=>Object.values(fiches??{}).reduce((n,list)=>n+(list??[]).filter(f=>!f.parentElementId && text(f.periodeCode)===text(periodCode)).length,0);
  const legacyCount=Object.values(fiches??{}).reduce((n,list)=>n+(list??[]).filter(f=>!f.parentElementId && !f.periodeCode).length,0);
+ const hasArchives=closed.length>0 || legacyCount>0;
  const activeOptions=open.map(p=>`<option value="${escapeHtml(p.Periode_Code)}"${text(p.Periode_Code)===text(selected)?" selected":""}>${escapeHtml(p.Libelle||p.Periode_Code)}</option>`).join("");
- const nav=`<div class="period-space-tabs" role="group" aria-label="Espaces du questionnaire"><button type="button" class="period-space-tab${!isArchive?" is-active":""}" data-period-space="active" aria-pressed="${!isArchive}">Périodes en cours</button><button type="button" class="period-space-tab${isArchive?" is-active":""}" data-period-space="archives" aria-pressed="${isArchive}">📁 Archives</button></div>`;
+ const nav=`<div class="period-space-tabs" role="group" aria-label="Espaces du questionnaire"><button type="button" class="period-space-tab${!isArchive?" is-active":""}" data-period-space="active" aria-pressed="${!isArchive}">Périodes en cours</button>${hasArchives?`<button type="button" class="period-space-tab${isArchive?" is-active":""}" data-period-space="archives" aria-pressed="${isArchive}">📁 Archives</button>`:""}</div>`;
  if(!isArchive)return `<section class="fiche-period-selector period-space">${nav}<div class="period-space-content"><label for="respondent-period">Période en cours</label><select id="respondent-period" data-period-select${open.length?"":" disabled"}><option value="">${open.length?"Choisir une période":"Aucune période ouverte"}</option>${activeOptions}</select><p class="help">Les fiches sont enregistrées dans la période sélectionnée. Les périodes clôturées se trouvent dans l’espace Archives.</p></div></section>`;
  const cards=closed.map(p=>{const key=text(p.Periode_Code),count=cardsCount(key),editable=periodEditable(config,key),chosen=selected===key;return `<article class="period-archive-card${chosen?" is-selected":""}"><div><div class="period-archive-title">${escapeHtml(p.Libelle||key)}</div><div class="period-archive-meta">${count} ${count>1?"fiches":"fiche"} · ${editable?"Modifications autorisées":"Lecture seule"}</div></div><button type="button" class="btn btn-small${chosen?" btn-primary":""}" data-archive-open="${escapeHtml(key)}">${chosen?"Période affichée":"Consulter"}</button></article>`;}).join("");
  const legacyCard=legacyCount?`<article class="period-archive-card${selected==="__historique__"?" is-selected":""}"><div><div class="period-archive-title">Sans période (historique)</div><div class="period-archive-meta">${legacyCount} ${legacyCount>1?"fiches":"fiche"} · Consultation</div></div><button type="button" class="btn btn-small" data-archive-open="__historique__">Consulter</button></article>`:"";
  const chosen=closed.find(p=>text(p.Periode_Code)===text(selected));
+ const pageCards=pages.map((page,index)=>{
+   const types=page.repeatableTypes||[];
+   const count=types.reduce((n,type)=>n+(fiches[type.code]||[]).filter(f=>!f.parentElementId && (selected==="__historique__"?!f.periodeCode:text(f.periodeCode)===text(selected))).length,0);
+   return {index,title:page.Titre||page.Libelle||page.Nom||`Page ${index+1}`,count};
+ }).filter(p=>p.count>0);
+ const pageLinks=pageCards.length>1?`<div class="period-archive-pages"><strong>Retrouver les fiches par page</strong><div class="period-archive-list">${pageCards.map(p=>`<article class="period-archive-card"><div><div class="period-archive-title">${escapeHtml(p.title)}</div><div class="period-archive-meta">${p.count} ${p.count>1?"fiches":"fiche"}</div></div><button type="button" class="btn btn-small" data-archive-page="${p.index}">Consulter cette page</button></article>`).join("")}</div></div>`:"";
  const detail=chosen?`<div class="period-archive-detail"><strong>📁 Archives — ${escapeHtml(chosen.Libelle||chosen.Periode_Code)}</strong><span>${periodEditable(config,selected)?"La correction des fiches existantes est autorisée. Ajout et suppression restent indisponibles.":"Cette période est clôturée : les fiches sont consultables en lecture seule."}</span><button type="button" class="btn btn-small" data-archive-back>← Retour aux archives</button></div>`:selected==="__historique__"?`<div class="period-archive-detail"><strong>Sans période (historique)</strong><span>Consultation des fiches enregistrées avant la mise en place des périodes.</span><button type="button" class="btn btn-small" data-archive-back>← Retour aux archives</button></div>`:"";
- return `<section class="fiche-period-selector period-space">${nav}<div class="period-space-content"><h3>Mes archives</h3><div class="period-archive-list">${cards}${legacyCard||""}${!cards&&!legacyCard?'<p class="help">Aucune archive disponible.</p>':""}</div>${detail}</div></section>`;
+ return `<section class="fiche-period-selector period-space">${nav}<div class="period-space-content"><h3>Mes archives</h3><div class="period-archive-list">${cards}${legacyCard||""}${!cards&&!legacyCard?'<p class="help">Aucune archive disponible.</p>':""}</div>${detail}${pageLinks}</div></section>`;
 }
 export function periodForNewFiche(config,selected,parentElementId,elements=[]){
  if(!config?.enabled)return "";
