@@ -193,3 +193,7 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 @media(max-width:560px){.period-archive-card{align-items:flex-start;flex-direction:column}.period-archive-card .btn{align-self:flex-start}.period-space-tab{padding:10px 7px;font-size:.87rem}}
 
 .period-archive-placeholder{padding:18px;margin:12px 0;background:#f8fafc;border:1px dashed #cbd6e7;border-radius:10px;color:#617083}
+/* Téléchargements d'une archive et de l'ensemble des périodes. */
+.period-archive-export{display:grid;gap:10px;margin-top:16px;padding:14px 15px;border:1px solid #dce3ef;border-radius:10px;background:#f8fafc;color:#35465e}
+.period-archive-export-buttons{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:560px){.period-archive-export-buttons .btn{width:100%}}

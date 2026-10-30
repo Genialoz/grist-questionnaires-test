@@ -699,6 +699,69 @@ function individualWorkbook(){
 }
 function downloadExportBlob(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);}
 function exportMyExcel(){try{const m=individualExportModel(),safe=String(m.responseCode||"reponse").replace(/[^a-z0-9_-]+/gi,"_");downloadExportBlob(writeWorkbook(individualWorkbook()),`Mes_reponses_${safe}.xlsx`);}catch(e){alert(`Export Excel impossible : ${e?.message||e}`)}}
+// Exports du répondant, limités à ses propres éléments déjà chargés et regroupés par période.
+// Aucun changement de la période affichée ni écriture dans Grist pendant un export.
+function periodExportScopes(){
+  const pc=state.periodConfig;
+  const list=(pc?.periods||[]).map(p=>({code:String(p.Periode_Code),label:String(p.Libelle||p.Periode_Code)}));
+  const hasHistorical=Object.values(state.fiches||{}).some(arr=>arr.some(f=>!f.periodeCode)) ||
+    state.definition.responseElements.some(e=>String(e.Reponse_Code)===String(state.response?.id) && String(e.Type_element||"").toLowerCase()==="principal" && !String(e.Periode_Code||""));
+  if(hasHistorical)list.push({code:"__historique__",label:"Sans période (historique)"});
+  return list;
+}
+function withPeriodExportScope(code,build){
+  const originalAnswers=state.answers, originalFiches=state.fiches;
+  try{
+    const rows={REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections};
+    const selected=code==="__historique__"?null:code;
+    const h=hydrateResponse(rows,state.definition,state.response.Reponse_Code,selected);
+    state.answers=h.principalAnswers||{};
+    state.fiches=Object.fromEntries(Object.entries(h.fiches||{}).map(([type,list])=>[type,list.filter(f=>selected===null?!f.periodeCode:String(f.periodeCode||"")===String(selected))]));
+    return build();
+  }finally{state.answers=originalAnswers;state.fiches=originalFiches;}
+}
+function periodExportLabel(code){return periodExportScopes().find(p=>p.code===code)?.label||code;}
+function safeExportPart(value){return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]+/gi,"_").slice(0,60);}
+function buildPeriodExcel(scope){
+  const grouped=scope.map(p=>({label:p.label,sheets:withPeriodExportScope(p.code,individualWorkbook)}));
+  const output=[{name:"PERIODES",rows:[["Période","Code"],...scope.map(p=>[p.label,p.code])]}];
+  for(let i=0;i<3;i++){
+    const name=["REPONSES","FICHES","MATRICES"][i],rows=[["Période",...(i===0?["Page","Section","Question","Réponse"]:i===1?["Type","N°","Parent","Question","Réponse"]:["Contexte","Matrice","Ligne","Colonne","Valeur"])]];
+    for(const p of grouped){const content=p.sheets[i]?.rows||[];
+      // Le premier onglet comporte des métadonnées puis un tableau (Page, Section, Question, Réponse).
+      const start=i===0?content.findIndex(r=>r[0]==="Page"&&r[1]==="Section")+1:1;
+      for(const r of content.slice(start)){if(r.length && r.some(v=>v!==""&&v!=null))rows.push([p.label,...r]);}
+    }
+    output.push({name,rows});
+  }
+  return output;
+}
+function exportPeriodExcel(code=null){
+  try{
+    if(!state.response)throw new Error("Aucune réponse à exporter.");
+    const scopes=code?periodExportScopes().filter(p=>p.code===code):periodExportScopes();
+    if(!scopes.length)throw new Error("Aucune période à exporter.");
+    if(code&&!scopes.length)throw new Error("Période introuvable.");
+    downloadExportBlob(writeWorkbook(buildPeriodExcel(scopes)),`Mes_reponses_${safeExportPart(code?periodExportLabel(code):"toutes_periodes")}.xlsx`);
+  }catch(e){alert(`Export Excel impossible : ${e?.message||e}`);}
+}
+function exportPeriodPdf(code=null){
+  try{
+    if(!state.response)throw new Error("Aucune réponse à exporter.");
+    const scopes=code?periodExportScopes().filter(p=>p.code===code):periodExportScopes();
+    if(!scopes.length)throw new Error("Aucune période à exporter.");
+    const parts=scopes.map(p=>{
+      const html=withPeriodExportScope(p.code,individualPrintHtml);
+      const contents=html.match(/<body>([\s\S]*?)<script>/)?.[1];
+      if(!contents)throw new Error("Impossible de générer la page PDF.");
+      return `<section style="break-before:page;page-break-before:always"><h2>Période : ${escapeHtml(p.label)}</h2>${contents}</section>`;
+    });
+    const template=withPeriodExportScope(scopes[0].code,individualPrintHtml);
+    const full=template.replace(/<body>[\s\S]*?<script>/,`<body>${parts.join("")}<script>`);
+    const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");
+    w.document.open();w.document.write(full);w.document.close();
+  }catch(e){alert(`Export PDF impossible : ${e?.message||e}`);}
+}
 function respondentExportButtons(){return !state.previewMode&&state.response?`<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger mes réponses en PDF</button><button type="button" class="btn btn-small" data-export-my-excel>Excel</button>`:"";}
 
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
@@ -1350,6 +1413,12 @@ function render() {
   root.querySelectorAll("[data-period-space]").forEach(el=>el.addEventListener("click",()=>{
     const isArchive=el.dataset.periodSpace==="archives";
     changePeriodView(isArchive?"__archives__":(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||""),{home:!isArchive});
+  }));
+  root.querySelectorAll("[data-period-export]").forEach(el=>el.addEventListener("click",()=>{
+    if(state.ficheEditor||state.subFicheEditor||state.principalDirty){showSaveError(new Error("Enregistrez ou annulez les modifications avant de télécharger les réponses."));return;}
+    const kind=el.dataset.periodExport,scope=el.dataset.exportPeriod||null;
+    if(kind==="excel"||kind==="all-excel")exportPeriodExcel(scope);
+    else exportPeriodPdf(scope);
   }));
   root.querySelectorAll("[data-archive-open]").forEach(el=>el.addEventListener("click",()=>changePeriodView(el.dataset.archiveOpen)));
   root.querySelectorAll("[data-archive-page]").forEach(el=>el.addEventListener("click",()=>{
