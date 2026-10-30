@@ -1256,14 +1256,44 @@ function render() {
     : `${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`:""}`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelector("[data-period-select]")?.addEventListener("change",e=>{if(state.ficheEditor||state.subFicheEditor){e.target.value=state.selectedPeriod;return;}state.selectedPeriod=e.target.value;render();});
-  // Les onglets ne déplacent aucune donnée : ils changent uniquement le filtre d’affichage.
-  const changePeriodView=next=>{if(state.ficheEditor||state.subFicheEditor)return;state.selectedPeriod=next;state.ficheListUi={};render();};
+  // Une fiche archivée consultée en lecture seule ne doit pas bloquer la navigation.
+  // Une fiche réellement modifiable conserve la protection contre l'abandon de saisie.
+  const canLeavePeriodView=()=>{
+    if(!state.ficheEditor && !state.subFicheEditor)return true;
+    const period=state.periodConfig;
+    const isReadonlyArchive=period?.enabled && (
+      state.selectedPeriod==="__historique__" ||
+      period.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) &&
+        String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
+        !periodEditable(period,state.selectedPeriod))
+    );
+    if(!isReadonlyArchive)return false;
+    state.ficheEditor=null;
+    state.subFicheEditor=null;
+    return true;
+  };
+  const changePeriodView=(next,{home=false}={})=>{
+    if(!canLeavePeriodView())return;
+    state.selectedPeriod=next;
+    state.ficheListUi={};
+    // Les cartes d'archives sont sur l'accueil ; les fiches peuvent être sur une autre page.
+    if(next==="__archives__" || home){state.pageIndex=0;state.pageHistory=[];}
+    else if(next==="__historique__" || state.periodConfig?.periods?.some(p=>String(p.Periode_Code)===String(next))){
+      const firstFichePage=vm.pages.findIndex(p=>(p.repeatableTypes??[]).length>0);
+      if(firstFichePage>=0 && !(vm.pages[state.pageIndex]?.repeatableTypes??[]).length){
+        state.pageIndex=firstFichePage;
+        state.pageHistory=[];
+      }
+    }
+    render();
+  };
   root.querySelectorAll("[data-period-space]").forEach(el=>el.addEventListener("click",()=>{
     const isArchive=el.dataset.periodSpace==="archives";
-    changePeriodView(isArchive?"__archives__":(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||""));
+    changePeriodView(isArchive?"__archives__":(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||""),{home:!isArchive});
   }));
   root.querySelectorAll("[data-archive-open]").forEach(el=>el.addEventListener("click",()=>changePeriodView(el.dataset.archiveOpen)));
   root.querySelector("[data-archive-back]")?.addEventListener("click",()=>changePeriodView("__archives__"));
+  root.querySelector("[data-archive-home]")?.addEventListener("click",()=>changePeriodView(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"",{home:true}));
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
