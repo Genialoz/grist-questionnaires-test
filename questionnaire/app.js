@@ -1249,7 +1249,7 @@ function render() {
     ${periodSelectionHtml(state.periodConfig,state.selectedPeriod,state.fiches)}
     ${archiveSpace?"":tocHtml}
     ${!archiveSpace&&showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
-    <h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
+    ${archiveSpace?"":`<h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>`}
     ${(archiveSpace?[]:page.sections).map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
