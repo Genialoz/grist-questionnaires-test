@@ -36,6 +36,34 @@ function canNavigatePrevious(vm){
   if(state.pageHistory.some(key=>vm.pages.some(p=>pageHistoryKey(p)===key)))return true;
   return state.pageIndex>0;
 }
+// Une consultation d'archive verrouillée n'est pas une saisie en cours.
+// Les archives déverrouillées restent protégées contre l'abandon de modifications.
+function closeReadonlyArchiveEditor(){
+  if(!state.ficheEditor && !state.subFicheEditor)return true;
+  const config=state.periodConfig;
+  if(!config?.enabled)return false;
+  const selected=String(state.selectedPeriod||"");
+  const readonly=selected==="__historique__" || config.periods?.some(p=>
+    String(p.Periode_Code)===selected &&
+    String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
+    !periodEditable(config,selected)
+  );
+  if(!readonly)return false;
+  state.ficheEditor=null;
+  state.subFicheEditor=null;
+  state.saveError="";
+  return true;
+}
+function returnFromReadonlyArchiveHome(){
+  if(!closeReadonlyArchiveEditor())return false;
+  state.selectedPeriod=state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"";
+  state.pageIndex=0;
+  state.pageHistory=[];
+  state.ficheListUi={};
+  state.saveError="";
+  render();
+  return true;
+}
 function beginActionFeedback(message){state.actionFeedback=message;state.actionFeedbackKind="busy";state.actionFeedbackToken++;}
 function clearActionFeedback(){state.actionFeedback="";state.actionFeedbackKind="";state.actionFeedbackToken++;}
 function showActionSuccess(message,delay=1400){
@@ -1258,22 +1286,10 @@ function render() {
   root.querySelector("[data-period-select]")?.addEventListener("change",e=>{if(state.ficheEditor||state.subFicheEditor){e.target.value=state.selectedPeriod;return;}state.selectedPeriod=e.target.value;render();});
   // Une fiche archivée consultée en lecture seule ne doit pas bloquer la navigation.
   // Une fiche réellement modifiable conserve la protection contre l'abandon de saisie.
-  const canLeavePeriodView=()=>{
-    if(!state.ficheEditor && !state.subFicheEditor)return true;
-    const period=state.periodConfig;
-    const isReadonlyArchive=period?.enabled && (
-      state.selectedPeriod==="__historique__" ||
-      period.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) &&
-        String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
-        !periodEditable(period,state.selectedPeriod))
-    );
-    if(!isReadonlyArchive)return false;
-    state.ficheEditor=null;
-    state.subFicheEditor=null;
-    return true;
-  };
+  const canLeavePeriodView=()=>closeReadonlyArchiveEditor();
   const changePeriodView=(next,{home=false}={})=>{
     if(!canLeavePeriodView())return;
+    state.saveError="";
     state.selectedPeriod=next;
     state.ficheListUi={};
     // Les cartes d'archives sont sur l'accueil ; les fiches peuvent être sur une autre page.
@@ -1293,7 +1309,10 @@ function render() {
   }));
   root.querySelectorAll("[data-archive-open]").forEach(el=>el.addEventListener("click",()=>changePeriodView(el.dataset.archiveOpen)));
   root.querySelector("[data-archive-back]")?.addEventListener("click",()=>changePeriodView("__archives__"));
-  root.querySelector("[data-archive-home]")?.addEventListener("click",()=>changePeriodView(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"",{home:true}));
+  root.querySelector("[data-archive-home]")?.addEventListener("click",()=>{
+    if(!closeReadonlyArchiveEditor())return;
+    changePeriodView(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"",{home:true});
+  });
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
@@ -1313,6 +1332,12 @@ function render() {
     const targetSection=e.currentTarget.dataset.tocSection||"";const targetIndicator=e.currentTarget.dataset.tocIndicator||"";
     if(!Number.isInteger(targetPage)||targetPage<0||targetPage>=vm.pages.length)return;
     if(targetPage!==state.pageIndex){
+      if(state.periodConfig?.enabled && state.selectedPeriod && closeReadonlyArchiveEditor() &&
+        (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) &&
+          String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" && !periodEditable(state.periodConfig,state.selectedPeriod)))){
+        if(targetPage===0){returnFromReadonlyArchiveHome();return;}
+        navigateToPage(vm,targetPage);render();return;
+      }
       if(!locked && !state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement et chargement de la page…":"Chargement de la page…");render();if(!(await savePrincipal())){clearActionFeedback();render();return;}}
       navigateToPage(vm,targetPage);clearActionFeedback();render();
     }
@@ -1376,6 +1401,12 @@ function render() {
   nav.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
   nav.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   document.querySelector("#prev")?.addEventListener("click",async()=>{
+    if(state.periodConfig?.enabled && (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) && String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" && !periodEditable(state.periodConfig,state.selectedPeriod)))){
+      if(!closeReadonlyArchiveEditor())return;
+      navigateToPreviousPage(vm);
+      if(state.pageIndex===0){returnFromReadonlyArchiveHome();return;}
+      render();return;
+    }
     if(locked||state.previewMode){navigateToPreviousPage(vm);render();return;}
     beginActionFeedback(state.principalDirty?"Enregistrement et retour à la page précédente…":"Retour à la page précédente…");render();
     if(await savePrincipal()){navigateToPreviousPage(vm);clearActionFeedback();render();}
@@ -1677,6 +1708,24 @@ async function finalizeFromToc(vm) {
 
 async function nextPage(vm,page) {
   state.statusMessage="";
+  // En lecture seule, « Accueil » doit fonctionner même si la fiche est affichée.
+  // Les archives ouvertes à la modification conservent le contrôle habituel.
+  if(state.periodConfig?.enabled && state.selectedPeriod &&
+    (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>
+      String(p.Periode_Code)===String(state.selectedPeriod) &&
+      String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
+      !periodEditable(state.periodConfig,state.selectedPeriod)))){
+    if(!closeReadonlyArchiveEditor())return;
+    const navMode=String(page.Navigation_apres||"").trim();
+    const targetRaw=codeOf(page.Page_cible_Code);
+    const targetIndex=navMode==="retour_page"?vm.pages.findIndex(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw)):-1;
+    if(targetIndex===0 || (navMode!=="retour_page" && state.pageIndex===vm.pages.length-1)){
+      returnFromReadonlyArchiveHome();return;
+    }
+    if(targetIndex>0){navigateToPage(vm,targetIndex);render();return;}
+    if(state.pageIndex<vm.pages.length-1){navigateToPage(vm,state.pageIndex+1);render();return;}
+    returnFromReadonlyArchiveHome();return;
+  }
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
   const errors=validateVisiblePage(page,state.answers);
   const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches,state.definition,state.answers);
