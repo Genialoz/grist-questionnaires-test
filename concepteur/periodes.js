@@ -28,6 +28,55 @@ export function initPeriodManager(getQuestionnaire){
   const set=new Set(codes.map(String));
   return (raw.Periode_Code||[]).filter(v=>set.has(String(code(v)||''))).length;
  }
+ // Affectation contrôlée des fiches historiques, limitée aux réponses du questionnaire sélectionné.
+ async function historicalRows(q){
+  const [rawElements,rawResponses,rawVersions]=await Promise.all([
+   grist.docApi.fetchTable('ELEMENTS_REPONSE'),grist.docApi.fetchTable('REPONSES'),grist.docApi.fetchTable('VERSIONS_QUESTIONNAIRES')
+  ]);
+  for(const [raw,columns] of [[rawElements,['Reponse_Code','Periode_Code','Parent_Code']],[rawResponses,['Version_Code']],[rawVersions,['Questionnaire_Code']]]){
+   const missing=columns.filter(k=>!(k in raw));if(missing.length)throw Error(`Colonnes nécessaires absentes : ${missing.join(', ')}`);
+  }
+  const versionIds=new Set(rows(rawVersions).filter(v=>String(code(v.Questionnaire_Code))===String(currentQuestionnaireId)||String(code(v.Questionnaire_Code))===String(q)).map(v=>String(v.id)));
+  const responseIds=new Set(rows(rawResponses).filter(r=>versionIds.has(String(code(r.Version_Code)))).map(r=>String(r.id)));
+  const own=rows(rawElements).filter(f=>responseIds.has(String(code(f.Reponse_Code))) && f.Supprime_logiquement!==true && f.Supprime_logiquement!==1 && String(f.Statut||'').toLowerCase()!=='annulé');
+  const isChild=f=>Boolean(code(f.Parent_Code))&&String(code(f.Parent_Code))!=='0';
+  return {all:own,roots:own.filter(f=>!isChild(f)&&!String(code(f.Periode_Code)||'').trim())};
+ }
+ async function showHistory(q){
+  const host=$('#periods-history-host');if(!host)return;
+  host.textContent='Recherche des fiches historiques…';
+  try{
+   const {roots}=await historicalRows(q);
+   const options=current.filter(p=>String(code(p.Questionnaire_Code))===String(q)).map(p=>`<option value="${e(p.Periode_Code)}">${e(p.Libelle)} (${e(p.Statut)})</option>`).join('');
+   if(!options){host.innerHTML='<p class="field-help">Créez d’abord une période de destination.</p>';return;}
+   if(!roots.length){host.innerHTML='<p class="field-help">Aucune fiche principale sans période pour ce questionnaire.</p>';return;}
+   host.innerHTML=`<div class="editor-section"><h4>Affecter des fiches historiques</h4><p class="field-help">Choisissez les fiches à affecter ; leurs sous-fiches non classées suivront automatiquement. Cette opération ne modifie pas les réponses enregistrées.</p><div style="max-height:300px;overflow:auto;border:1px solid #ddd;padding:.6rem">${roots.map(f=>`<label style="display:flex;gap:.5rem;align-items:center;padding:.3rem"><input type="checkbox" data-history-id="${f.id}"> Fiche ${e(f.Element_Code||f.id)} · Réponse ${e(f.Reponse_Code)}</label>`).join('')}</div><label>Période de destination<select id="history-target">${options}</select></label><div class="form-actions"><button type="button" class="btn btn-primary" id="history-assign">Affecter les fiches sélectionnées</button><button type="button" class="secondary-btn" id="history-cancel">Fermer</button></div></div>`;
+   $('#history-cancel').onclick=()=>host.replaceChildren();
+   $('#history-assign').onclick=async()=>{
+    try{
+    const selected=[...host.querySelectorAll('[data-history-id]:checked')].map(x=>Number(x.dataset.historyId));
+    const target=$('#history-target')?.value;
+    if(!selected.length){note('Sélectionnez au moins une fiche.',true);return;}
+    const period=current.find(p=>String(p.Periode_Code)===target&&String(code(p.Questionnaire_Code))===String(q));
+    if(!period)throw Error('La période sélectionnée est introuvable.');
+    const latest=await historicalRows(q);const picked=latest.roots.filter(f=>selected.includes(f.id));
+    if(picked.length!==selected.length)throw Error('Certaines fiches ont été modifiées. Actualisez la liste.');
+    const children=[];const done=new Set(selected.map(String));let frontier=picked;
+    while(frontier.length){const ids=new Set(frontier.map(f=>String(f.id)));const following=latest.all.filter(f=>!done.has(String(f.id))&&ids.has(String(code(f.Parent_Code)))&&!String(code(f.Periode_Code)||'').trim());for(const f of following){done.add(String(f.id));children.push(f);}frontier=following;}
+    const affected=[...picked,...children];
+    if(!confirm(`Affecter ${picked.length} fiche(s) et ${children.length} sous-fiche(s) à « ${period.Libelle} » ?\n\nLes réponses seront conservées. Le rattachement à une période pourra modifier les droits de consultation et de modification.`))return;
+    const currentPeriods=await fetchPeriods();
+    if(!currentPeriods.some(p=>String(p.Periode_Code)===target&&String(code(p.Questionnaire_Code))===String(q)))throw Error('La période de destination a changé.');
+    // Revérifier les fiches juste avant écriture pour ne pas écraser une affectation concurrente.
+    const check=await historicalRows(q);
+    if(affected.some(f=>!check.all.some(v=>v.id===f.id&&!String(code(v.Periode_Code)||'').trim())))throw Error('Certaines fiches ont changé entre-temps. Opération annulée.');
+    await grist.docApi.applyUserActions(affected.map(f=>['UpdateRecord','ELEMENTS_REPONSE',f.id,{Periode_Code:target}]));
+    note(`${affected.length} fiche(s) et sous-fiche(s) rattachée(s) à « ${period.Libelle} ».`);
+    await showHistory(q);
+    }catch(err){note(`Affectation impossible : ${err?.message||err}`,true);}
+   };
+  }catch(err){host.textContent=`Classement impossible : ${err?.message||err}`;note(err?.message||String(err),true);}
+ }
  async function changeMode(enabled,q){
   if(!currentQuestionnaireId)throw new Error('Questionnaire non identifié.');
   if(!enabled){
@@ -86,7 +135,7 @@ export function initPeriodManager(getQuestionnaire){
  }
  function editor(row={}){return `<form id="periods-form" class="periods-editor"><input type="hidden" name="rowId" value="${e(row.id||'')}"><div class="periods-grid"><label>Libellé de la période<input name="Libelle" required maxlength="120" value="${e(row.Libelle||'')}" placeholder="Ex. 2026-2027"></label><label>Début de la période<input type="date" name="Date_debut" required value="${e(row.Date_debut||'')}"></label><label>Fin de la période<input type="date" name="Date_fin" required value="${e(row.Date_fin||'')}"></label><label>Date à partir de laquelle les répondants peuvent saisir des fiches<input type="date" name="Date_ouverture" value="${e(row.Date_ouverture||'')}"><small class="field-help" style="font-weight:400">Facultatif : si aucune date n’est indiquée, ce champ ne limite pas le début de la saisie.</small></label><label>Date limite de saisie et de modification des fiches<input type="date" name="Date_cloture" value="${e(row.Date_cloture||'')}"><small class="field-help" style="font-weight:400">Facultatif : date jusqu’à laquelle il sera possible d’ajouter ou corriger des fiches.</small></label><label>État administratif<select name="Statut">${['Prévue','Ouverte','Clôturée'].map(x=>`<option value="${x}" ${row.Statut===x?'selected':''}>${x}</option>`).join('')}</select></label></div><label style="display:flex;gap:.5rem;align-items:center;margin:1rem 0"><input type="checkbox" name="${ARCHIVE_COLUMN}" value="1" ${row[ARCHIVE_COLUMN]===true||row[ARCHIVE_COLUMN]===1?'checked':''} ${archiveColumnPresent?'':'disabled'}> Autoriser la modification des fiches archivées de cette période</label><p class="field-help">Cette autorisation s'applique aux fiches et sous-fiches existantes, en mode classique ou permanent. Elle ne permet ni de créer, ni de dupliquer, ni de supprimer des fiches archivées. ${archiveColumnPresent?'':'Ajoutez d’abord la colonne Booléen '+ARCHIVE_COLUMN+' dans PERIODES_QUESTIONNAIRE (sans formule).'}</p><p class="field-help">L'état et les dates de la période déterminent l'accès aux fiches dans le Questionnaire permanent.</p><div class="form-actions"><button type="submit" class="btn btn-primary">${row.id?'Enregistrer la période':'Créer la période'}</button><button type="button" class="secondary-btn" id="periods-cancel-edit">Annuler</button></div></form>`;}
  function list(q){const selected=current.filter(x=>String(code(x.Questionnaire_Code))===String(q));return selected.length?selected.sort((a,b)=>String(a.Date_debut).localeCompare(String(b.Date_debut))).map(p=>`<div class="period-row"><div><strong>${e(p.Libelle)}</strong><div class="hint">${e(p.Date_debut)} → ${e(p.Date_fin)} · ${e(p.Statut||'Prévue')}${p[ARCHIVE_COLUMN]?' · Archives modifiables':''}${p.Date_ouverture?' · Ouverture : '+e(p.Date_ouverture):''}${p.Date_cloture?' · Fin des modifications : '+e(p.Date_cloture):''}</div></div><div class="period-actions"><button type="button" class="secondary-btn" data-period-delete="${p.id}">Supprimer</button><button type="button" class="secondary-btn" data-period-edit="${p.id}">Modifier</button><button type="button" class="secondary-btn" data-period-next="${p.id}">Période suivante</button></div></div>`).join(''):'<p class="hint">Aucune période créée pour ce questionnaire.</p>';}
- function display(q){content.innerHTML=`<div class="editor-section"><h3>Mode de fonctionnement</h3><label for="period-mode-select">Type de questionnaire</label><select id="period-mode-select"><option value="classic" ${!modeEnabled?"selected":""}>Questionnaire classique</option><option value="permanent" ${modeEnabled?"selected":""}>Questionnaire permanent avec périodes</option></select><p class="field-help">En mode classique, toutes les fiches réapparaissent. Les archives clôturées restent en lecture seule ; les périodes et leurs rattachements sont conservés. La validation globale est protégée si des fiches périodisées existent.</p></div><p class="field-help">Configuration des périodes de « ${e(q)} ». Les périodes et le mode sont configurés par questionnaire. Aucun lien de campagne n’est modifié.</p>${archiveColumnPresent?'':'<p class="field-help" style="color:#b91c1c">Pour autoriser les modifications des archives, créez dans PERIODES_QUESTIONNAIRE la colonne Booléen Modification_archives_autorisee (sans formule). Les archives restent protégées tant que cette colonne est absente.</p>'}<div id="periods-note" role="status" aria-live="polite"></div><div class="editor-section"><h3>Périodes configurées</h3><div id="periods-list">${list(q)}</div><button type="button" class="secondary-btn" id="periods-new">+ Nouvelle période</button></div><div class="editor-section" style="margin-top:1.3rem;border:1px solid #f3c6b9;border-radius:10px;padding:1rem"><h3>Revenir entièrement au mode classique</h3><p class="field-help">Détache les fiches et sous-fiches des périodes (y compris celles déjà supprimées), supprime les périodes restantes de ce questionnaire et désactive le mode permanent. Aucune fiche ni réponse n’est supprimée. <strong>Le classement historique par période sera perdu.</strong> Faites une sauvegarde avant cette opération.</p><button type="button" class="secondary-btn" id="periods-reset-classic">Détacher les fiches et supprimer les périodes…</button></div><div id="periods-editor-host"></div>`;
+ function display(q){content.innerHTML=`<div class="editor-section"><h3>Mode de fonctionnement</h3><label for="period-mode-select">Type de questionnaire</label><select id="period-mode-select"><option value="classic" ${!modeEnabled?"selected":""}>Questionnaire classique</option><option value="permanent" ${modeEnabled?"selected":""}>Questionnaire permanent avec périodes</option></select><p class="field-help">En mode classique, toutes les fiches réapparaissent. Les archives clôturées restent en lecture seule ; les périodes et leurs rattachements sont conservés. La validation globale est protégée si des fiches périodisées existent.</p></div><p class="field-help">Configuration des périodes de « ${e(q)} ». Les périodes et le mode sont configurés par questionnaire. Aucun lien de campagne n’est modifié.</p>${archiveColumnPresent?'':'<p class="field-help" style="color:#b91c1c">Pour autoriser les modifications des archives, créez dans PERIODES_QUESTIONNAIRE la colonne Booléen Modification_archives_autorisee (sans formule). Les archives restent protégées tant que cette colonne est absente.</p>'}<div id="periods-note" role="status" aria-live="polite"></div><div class="editor-section"><h3>Périodes configurées</h3><div id="periods-list">${list(q)}</div><button type="button" class="secondary-btn" id="periods-new">+ Nouvelle période</button></div><div class="editor-section" style="margin-top:1.3rem;border:1px solid #f3c6b9;border-radius:10px;padding:1rem"><h3>Revenir entièrement au mode classique</h3><p class="field-help">Détache les fiches et sous-fiches des périodes (y compris celles déjà supprimées), supprime les périodes restantes de ce questionnaire et désactive le mode permanent. Aucune fiche ni réponse n’est supprimée. <strong>Le classement historique par période sera perdu.</strong> Faites une sauvegarde avant cette opération.</p><button type="button" class="secondary-btn" id="periods-reset-classic">Détacher les fiches et supprimer les périodes…</button></div><div class="editor-section"><h3>Classement des fiches historiques</h3><p class="field-help">Affecter à une période existante les anciennes fiches sans période, sans supprimer leurs réponses.</p><button type="button" class="secondary-btn" id="periods-history-open">Classer les fiches historiques…</button><div id="periods-history-host"></div></div><div id="periods-editor-host"></div>`;
  const modeSelect=$('#period-mode-select');
  modeSelect.onchange=async()=>{
   const enabled=modeSelect.value==='permanent';modeSelect.disabled=true;
@@ -101,6 +150,7 @@ export function initPeriodManager(getQuestionnaire){
   catch(err){note(`Remise en mode classique impossible : ${err?.message||err}`,true);}
   finally{resetButton.disabled=false;}
  };
+ $('#periods-history-open').onclick=()=>showHistory(q);
  $('#periods-new').onclick=()=>showEditor({Statut:'Prévue'});
  content.querySelectorAll('[data-period-delete]').forEach(b=>b.onclick=async()=>{
   const p=current.find(item=>String(item.id)===b.dataset.periodDelete);if(!p)return;
