@@ -57,12 +57,34 @@ function closeReadonlyArchiveEditor(){
 function returnFromReadonlyArchiveHome(){
   if(!closeReadonlyArchiveEditor())return false;
   state.selectedPeriod=state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"";
+  loadPrincipalForSelectedPeriod();
   state.pageIndex=0;
   state.pageHistory=[];
   state.ficheListUi={};
   state.saveError="";
   render();
   return true;
+}
+// La saisie générale d'une période ne doit jamais écraser celle d'une autre.
+// Un code nul correspond au mode classique ; "" désigne les réponses historiques.
+function principalPeriodScope(){
+  if(!state.periodConfig?.enabled)return null;
+  const selected=String(state.selectedPeriod||"");
+  if(selected==="__historique__")return "";
+  if(state.periodConfig.periods?.some(p=>String(p.Periode_Code)===selected))return selected;
+  return "__aucune_periode__";
+}
+function hydratedCurrentResponse(){
+  return hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code,principalPeriodScope());
+}
+function loadPrincipalForSelectedPeriod(){
+  if(!state.response||!state.definition)return;
+  const h=hydratedCurrentResponse();
+  state.principalElement=h.principalElement;
+  state.answers=h.principalAnswers;
+  state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{};
+  state.principalDirty=false;
+  applyCampaignPersonalization();
 }
 function beginActionFeedback(message){state.actionFeedback=message;state.actionFeedbackKind="busy";state.actionFeedbackToken++;}
 function clearActionFeedback(){state.actionFeedback="";state.actionFeedbackKind="";state.actionFeedbackToken++;}
@@ -742,7 +764,20 @@ function indicatorLegacyStats(q){return String(q?.Indicateurs_Stats||"count,perc
 function indicatorSourceConfig(q,token,kind){const c=indicatorConfig(q)[token];if(c&&Array.isArray(c.stats))return {stats:new Set(c.stats.map(String)),chart:String(c.chart||"none").toLowerCase(),display:String(c.display||"both").toLowerCase(),groupBy:String(c.groupBy||"")};const legacy=new Set(indicatorLegacyStats(q));return {stats:kind==="f"?new Set(["total"]):legacy,chart:String(q?.Indicateurs_Graphique||"none").toLowerCase(),display:"both",groupBy:""}}
 function indicatorResponses(){const all=(state.definition?.responses||[]).filter(r=>!isTrue(r.Supprime_logiquement));let campaign=null;try{campaign=selectedCampaign()}catch{}if(!campaign)return [];return all.filter(r=>{const raw=codeOf(r.Campagne_Code);return String(raw)===String(campaign.id)||String(raw)===String(codeOf(campaign.Campagne_Code))})}
 function indicatorHasCampaign(){try{return !!selectedCampaign()}catch{return false}}
-function indicatorHydratedResponses(){const tables={REPONSES:state.definition?.responses||[],ELEMENTS_REPONSE:state.definition?.responseElements||[],VALEURS_REPONSE:state.definition?.responseValues||[],SELECTIONS_REPONSE:state.definition?.responseSelections||[]};const out=[];for(const r of indicatorResponses()){try{out.push(hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id)))}catch{}}return out}
+function indicatorHydratedResponses(){
+  const tables={REPONSES:state.definition?.responses||[],ELEMENTS_REPONSE:state.definition?.responseElements||[],VALEURS_REPONSE:state.definition?.responseValues||[],SELECTIONS_REPONSE:state.definition?.responseSelections||[]};
+  const out=[],scope=principalPeriodScope();
+  for(const r of indicatorResponses()){
+    try{
+      const h=hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id),scope);
+      if(state.periodConfig?.enabled){
+        h.fiches=Object.fromEntries(Object.entries(h.fiches||{}).map(([key,list])=>[key,list.filter(f=>periodMatches(state.periodConfig,state.selectedPeriod,f))]));
+      }
+      out.push(h);
+    }catch(e){console.warn("Indicateurs : réponse ignorée",e);}
+  }
+  return out;
+}
 function questionChoiceLabels(q){
   const out=new Map(),def=state.definition||{},qc=String(codeOf(q?.Question_Code)||"");
   for(const c of def.choices||[]){
@@ -1250,12 +1285,12 @@ function render() {
     ${archiveSpace?"":tocHtml}
     ${!archiveSpace&&showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
     ${archiveOverview?"":`<h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>`}
-    ${(archiveSpace?[]:page.sections).map(s=>{
+    ${(archiveOverview?[]:page.sections).map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
       return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${richTextHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${richTextHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return `<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return archiveSpace?"":`<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
     ${archiveOverview?`<div class="period-archive-placeholder">Sélectionnez une période dans la liste des archives ci-dessus pour afficher ses fiches.</div>`:(page.repeatableTypes ?? []).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
@@ -1282,15 +1317,24 @@ function render() {
   nav.innerHTML=locked
     ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${richTextHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div>${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button>`:""}</div></div>`
     : `${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`:""}`;
+  if(locked || (archiveSpace && !archiveOverview && !periodEditable(state.periodConfig,state.selectedPeriod))){
+    // Verrouiller la saisie, pas les boutons de consultation/navigation.
+    root.querySelectorAll("[data-question],[data-matrix-question],[data-clear-question]").forEach(el=>{el.disabled=true;});
+  }
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
-  root.querySelector("[data-period-select]")?.addEventListener("change",e=>{if(state.ficheEditor||state.subFicheEditor){e.target.value=state.selectedPeriod;return;}state.selectedPeriod=e.target.value;render();});
+  root.querySelector("[data-period-select]")?.addEventListener("change",e=>{
+    if(state.ficheEditor||state.subFicheEditor||state.principalDirty){e.target.value=state.selectedPeriod;if(state.principalDirty)showSaveError(new Error("Enregistrez les questions générales avant de changer de période."));return;}
+    state.selectedPeriod=e.target.value;loadPrincipalForSelectedPeriod();render();
+  });
   // Une fiche archivée consultée en lecture seule ne doit pas bloquer la navigation.
   // Une fiche réellement modifiable conserve la protection contre l'abandon de saisie.
   const canLeavePeriodView=()=>closeReadonlyArchiveEditor();
   const changePeriodView=(next,{home=false}={})=>{
     if(!canLeavePeriodView())return;
+    if(state.principalDirty){showSaveError(new Error("Enregistrez les questions générales avant de quitter cette période."));render();return;}
     state.saveError="";
     state.selectedPeriod=next;
+    loadPrincipalForSelectedPeriod();
     state.ficheListUi={};
     // Les cartes d'archives sont sur l'accueil ; les fiches peuvent être sur une autre page.
     if(next==="__archives__" || home){state.pageIndex=0;state.pageHistory=[];}
@@ -1879,7 +1923,7 @@ async function refreshPersistenceRows(){for(const [key,table] of [["responses","
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
 function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");let c=null;if(access)c=cs.find(x=>String(x.Jeton_acces??"").trim()===access)||null;const requested=requestedParam("Campagne_");if(!c&&requested)c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested)||null;const candidate=state.selectedRecord?.Campagne_Code;if(!c&&candidate!=null){const raw=codeOf(candidate);c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw)||null;}if(!c&&cs.length===1)c=cs[0];if(!c)throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");const gate=campaignAccessState(c);if(!gate.allowed&&!state.previewMode)throw new Error(gate.message);return c;}
 async function ensureResponse(){
-  if(state.response&&state.principalElement)return;
+  if(state.response&&state.principalElement && (principalPeriodScope()===null || String(state.principalElement.Periode_Code??"")===principalPeriodScope()))return;
   const campaign=selectedCampaign(), vc=state.definition.version.id;
   /* Re-read persistence immediately before creation. With a personalized access link,
      the access token is the collective response key: reuse an existing readable
@@ -1898,9 +1942,14 @@ async function ensureResponse(){
     if(state.response && isUniqueLinkCampaign(campaign))setPendingUniqueResumeToken("");
   }
   if(!state.response)throw new Error("La réponse a été créée mais n’est pas relisible dans cette session Grist.");
-  let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement));
+  const scope=principalPeriodScope();
+  if(scope==="__aucune_periode__"|| (scope!==null && scope!=="" && !periodEditable(state.periodConfig,scope))){
+    throw new Error("Sélectionnez une période autorisée avant d'enregistrer les questions générales.");
+  }
+  let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement) && (scope===null? !String(e.Periode_Code??""):String(e.Periode_Code??"")===scope));
   if(!principal){
     const ec=uniqueCode("ELT"),fields={Element_Code:ec,Reponse_Code:state.response.id,Type_element:"Principal",Statut:"Brouillon",Ordre:0,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};
+    if(scope)fields.Periode_Code=scope;
     await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);
     await refreshPersistenceRows();
     principal=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===codeOf(ec))??null;
@@ -1975,13 +2024,17 @@ async function bumpElementRevision(element){const er=Number(element.Revision||0)
 async function savePrincipal(){try{
   state.saveError="";
   assertResponseEditable();
+  if(state.principalDirty && state.periodConfig?.enabled && !periodEditable(state.periodConfig,state.selectedPeriod)){
+    throw new Error("Les réponses générales de cette période sont en lecture seule.");
+  }
   // La navigation ne doit pas écrire le bloc principal s'il n'a pas été modifié
   // dans ce navigateur. Sur un lien collectif, une autre personne peut avoir
   // créé/enregistré une fiche entre-temps sans rendre cette session obsolète.
   if(!state.principalDirty){
+    if(state.periodConfig?.enabled && !periodEditable(state.periodConfig,state.selectedPeriod))return true;
     await ensureResponse();
     await refreshPersistenceRows();
-    const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
+    const h=hydratedCurrentResponse();
     state.response=h.response;state.principalElement=h.principalElement;state.answers=h.principalAnswers;state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{};state.fiches=h.fiches;
     applyCampaignPersonalization();
     return true;
@@ -1999,7 +2052,7 @@ async function savePrincipal(){try{
   await writeAnswers(state.principalElement,qs,state.answers);
   await bumpElementRevision(state.principalElement);
   await refreshPersistenceRows();
-  const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
+  const h=hydratedCurrentResponse();
   state.response=h.response;state.principalElement=h.principalElement;state.answers=h.principalAnswers;state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{};state.fiches=h.fiches;state.principalDirty=false;
   applyCampaignPersonalization();
   state.saving=false;
@@ -2007,7 +2060,7 @@ async function savePrincipal(){try{
 }catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();return false;}}
 async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await refreshPersistenceRows();if(editor.parentElementId){const parent=state.definition.responseElements.find(e=>String(e.id)===String(editor.parentElementId));if(!(editor.index==null?periodCanChangeStructure:periodEditable)(state.periodConfig,parent?.Periode_Code))throw new Error("La période de la fiche parente ne permet pas cette action.");if(isTrue(parent?.Lecture_seule_import))throw new Error("La fiche parente préremplie est en lecture seule.");}const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];if(fiche?.readOnlyImport)throw new Error("Cette fiche préremplie est en lecture seule.");
  if(!fiche&&!editor.parentElementId&&!periodCanChangeStructure(state.periodConfig,state.selectedPeriod))throw new Error("Création impossible dans une période archivée."); if(fiche&&!periodEditable(state.periodConfig,fiche.periodeCode))throw new Error("Cette période est archivée ou fermée à la modification.");let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;const selectedPeriod=periodForNewFiche(state.periodConfig,state.selectedPeriod,editor.parentElementId,state.definition.responseElements);if(selectedPeriod)fields.Periode_Code=selectedPeriod;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
-  await writeAnswers(el,type.questions,editor.answers);await bumpElementRevision(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
+  await writeAnswers(el,type.questions,editor.answers);await bumpElementRevision(el);await refreshPersistenceRows();const h=hydratedCurrentResponse();state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
 // Copie d'une fiche de répondant : réutilise le flux de création et ses ACL existantes.
 // Chaque élément et chaque valeur reçoit un nouvel identifiant via persistFiche.
@@ -2124,6 +2177,7 @@ async function boot() {
     if(!state.previewMode)applyCampaignPersonalization();
     state.periodConfig=await readPeriodConfiguration(grist.docApi,state.definition);
     state.selectedPeriod=state.periodConfig?.defaultPeriod||"";
+    if(state.response)loadPrincipalForSelectedPeriod();
     render();
   } catch(e) {
     if(e?.code==="preview_selection_required"){renderDirectPreviewChooser(e.versions);return;}

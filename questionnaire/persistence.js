@@ -37,7 +37,7 @@ export function deserializeAnswer(question,row,context={}){
   return row.Valeur_texte ?? "";
 }
 function sameRef(value,row,codeCol){const raw=codeOf(value); return raw===codeOf(row?.[codeCol]) || String(value)===String(row?.id);}
-export function hydrateResponse(rows,definition,reponseCode){
+export function hydrateResponse(rows,definition,reponseCode,selectedPeriod=null){
   const response=(rows.REPONSES??[]).find(r=>codeOf(r.Reponse_Code)===codeOf(reponseCode)||String(r.id)===String(reponseCode))??null;
   if(!response) return {response:null,principalAnswers:{},fiches:{},revisions:{response:null,elements:{}}};
   const elements=(rows.ELEMENTS_REPONSE??[]).filter(e=>sameRef(e.Reponse_Code,response,"Reponse_Code"));
@@ -58,7 +58,12 @@ export function hydrateResponse(rows,definition,reponseCode){
       continue;}
     if(multi(q))out[qc]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[qc]=deserializeAnswer(q,v,definition);
   } return {answers:out,readOnlyQuestions};};
-  const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
+  // En mode permanent, chaque période a son propre élément Principal.
+  // Sans période (null), conserver strictement le comportement historique.
+  const principals=elements.filter(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
+  const principal=selectedPeriod===null
+    ? principals.find(e=>!String(e.Periode_Code??""))
+    : principals.find(e=>String(e.Periode_Code??"")===String(selectedPeriod));
   const fiches={};
   for(const el of sortByOrder(elements.filter(e=>["fiche","sous-fiche"].includes(String(e.Type_element??"").toLowerCase())&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
     const rawTc=codeOf(el.TypeFiche_Code);
