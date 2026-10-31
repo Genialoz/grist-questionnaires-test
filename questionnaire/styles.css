@@ -252,3 +252,8 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 .comparison-period-choice input[type="checkbox"]{width:16px!important;height:16px!important;flex:0 0 16px;margin:0!important}
 .comparison-reference-field{display:flex;flex-direction:column;gap:5px;max-width:330px;margin:10px 0;font-weight:600}
 .comparison-reference-field select{padding:8px;border:1px solid #b9c7dd;border-radius:7px;background:#fff}
+/* V3.9.1 — téléchargements de la comparaison */
+.comparison-export-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:16px 0;padding:12px 14px;border:1px solid #dce4f0;background:#f7f9fd;border-radius:9px}
+.comparison-export-label{font-weight:700;color:#263e59;margin-right:5px}
+.comparison-export-actions .btn{white-space:normal}
+@media(max-width:620px){.comparison-export-actions{align-items:stretch;flex-direction:column}.comparison-export-label{margin-bottom:2px}}

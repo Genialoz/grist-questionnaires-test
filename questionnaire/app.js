@@ -1092,7 +1092,71 @@ function renderIndicatorComparison(q){
     details=`<details class="comparison-details"><summary>Voir les graphiques et indicateurs détaillés</summary><div class="period-comparison-columns">${series.map(p=>`<div class="period-comparison-column"><h4>${escapeHtml(p.label)}</h4>${p.html}</div>`).join('')}</div></details>`;
   }
   const warn=selectedPeriods.length<2?'<p class="help" role="alert">Sélectionnez au moins deux périodes pour afficher la comparaison.</p>':'';
-  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Choisissez au moins deux périodes. Les calculs concernent uniquement votre propre réponse.</p><div class="comparison-period-choices">${selectors}</div>${options}${warn}${table}${chart}${details}</section>`;
+  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Choisissez au moins deux périodes. Les calculs concernent uniquement votre propre réponse.</p><div class="comparison-period-choices">${selectors}</div>${options}${warn}${table}${chart}${selectedPeriods.length>=2?`<div class="comparison-export-actions"><span class="comparison-export-label">Télécharger la comparaison</span><button type="button" class="btn btn-small" data-comparison-export="excel">Tableau Excel</button><button type="button" class="btn btn-small" data-comparison-export="pdf">Tableau et graphique (PDF)</button>${state.comparison.showChart?'<button type="button" class="btn btn-small" data-comparison-export="png">Graphique PNG</button>':''}</div>`:''}${details}</section>`;
+}
+// V3.9.1 — Les exports portent uniquement sur le tableau déjà affiché pour la
+// réponse courante. Ils n'interrogent ni les autres répondants ni les tables Grist.
+function comparisonExportContext(){
+  const panel=document.querySelector('.period-comparison-panel');
+  const table=panel?.querySelector('.comparison-changes table');
+  if(!state.comparison.active||!table)throw new Error('Sélectionnez au moins deux périodes avec des indicateurs numériques.');
+  const periods=comparisonPeriods().filter(p=>(state.comparison.selected||[]).includes(String(p.Periode_Code)));
+  if(periods.length<2)throw new Error('Sélectionnez au moins deux périodes.');
+  const rows=[...table.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('th,td')].map(td=>td.innerText?.trim()||td.textContent?.trim()||''));
+  const chart=state.comparison.showChart?panel.querySelector('.comparison-chart-svg'):null;
+  return {panel,table,rows,chart,periods,reference:periods.find(p=>String(p.Periode_Code)===state.comparison.reference)};
+}
+function comparisonExportFilename(suffix,extension){
+  const name=String(state.definition?.version?.Titre||state.definition?.version?.Libelle||'indicateurs');
+  const slug=safeExportPart(name)||'indicateurs';
+  return `Comparaison_${slug}_${suffix}.${extension}`;
+}
+function exportComparisonExcel(){
+  try{
+    const c=comparisonExportContext();
+    const meta=[['Comparaison des indicateurs'],['Périodes sélectionnées',c.periods.map(p=>p.Libelle||p.Periode_Code).join(' ; ')],['Période de référence',c.reference?.Libelle||''],['Écarts',state.comparison.showDiff?'Oui':'Non'],['Évolutions en %',state.comparison.showPercent?'Oui':'Non'],['Flèches',state.comparison.showTrend?'Oui':'Non'],[],...c.rows];
+    const sheets=[{name:'COMPARAISON',rows:meta}];
+    if(c.chart){
+      // L'export du graphique utilise les valeurs visibles et non des données d'autres participants.
+      const chartTitle=c.panel.querySelector('.comparison-chart-box h4')?.textContent||'Graphique';
+      sheets.push({name:'GRAPHIQUE',rows:[['Indicateur affiché',chartTitle],['Type de graphique',state.comparison.chartType],[],...c.rows]});
+    }
+    downloadExportBlob(writeWorkbook(sheets),comparisonExportFilename('tableau','xlsx'));
+  }catch(error){alert(`Export Excel impossible : ${error.message||error}`);}
+}
+async function exportComparisonPng(){
+  try{
+    const c=comparisonExportContext();
+    if(!c.chart)throw new Error('Activez « Afficher un graphique comparatif » pour télécharger une image.');
+    const svg=c.chart.cloneNode(true);
+    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const vb=c.chart.viewBox.baseVal;
+    const w=vb?.width||800,h=vb?.height||350;
+    svg.setAttribute('width',w);svg.setAttribute('height',h);
+    const src=new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml;charset=utf-8'});
+    const uri=URL.createObjectURL(src);
+    try{
+      const img=new Image();
+      await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('Impossible de convertir le graphique en image.'));img.src=uri;});
+      const canvas=document.createElement('canvas');canvas.width=Math.ceil(w*2);canvas.height=Math.ceil(h*2);
+      const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponible.');
+      ctx.scale(2,2);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+      const png=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Conversion PNG impossible.')),'image/png'));
+      downloadExportBlob(png,comparisonExportFilename('graphique','png'));
+    }finally{URL.revokeObjectURL(uri);}
+  }catch(error){alert(`Export PNG impossible : ${error.message||error}`);}
+}
+function exportComparisonPdf(){
+  try{
+    const c=comparisonExportContext();
+    const title='Comparaison des indicateurs';
+    const labels=c.periods.map(p=>p.Libelle||p.Periode_Code).join(' · ');
+    const table=c.table.outerHTML;
+    const chart=c.chart?`<h2>${escapeHtml(c.panel.querySelector('.comparison-chart-box h4')?.textContent||'Graphique')}</h2>${c.chart.outerHTML}`:'';
+    const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial,sans-serif;color:#24344a}h1{font-size:21px}h2{font-size:15px;margin-top:22px}.meta{color:#53657e;margin-bottom:15px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:7px;text-align:left}thead th{background:#e9eff8}tr{break-inside:avoid}svg{width:100%;height:auto;max-height:380px}small{font-size:9px}</style></head><body><h1>${title}</h1><p class="meta">Périodes : ${escapeHtml(labels)}${c.reference?`<br>Période de référence : ${escapeHtml(c.reference.Libelle||c.reference.Periode_Code)}`:''}</p>${table}${chart}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));<\/script></body></html>`;
+    const w=window.open('','_blank');if(!w)throw new Error('Autorisez les fenêtres pop-up pour ouvrir le PDF.');
+    w.document.open();w.document.write(html);w.document.close();
+  }catch(error){alert(`Export PDF impossible : ${error.message||error}`);}
 }
 function personalizedDescriptionText(q,answers){const fallback=first(q,["Aide","Description","Texte_aide"],"");if(!isTrue(q.MP_Actif))return fallback;const rules=(()=>{try{const x=JSON.parse(q.MP_Regles||"[]");return Array.isArray(x)?x:[]}catch{return []}})(),source=String(q.MP_Question_Source||""),srcQ=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===source);let value=source?answers?.[source]:"";if((value===""||value==null)&&srcQ&&campaignLocksQuestion(srcQ)){const p=campaignPersonalization();if(p&&String(p.questionCode)===source)value=p.value}value=String(codeOf(value)||value||"");let hit=rules.find(r=>String(r.value)===value);if(!hit&&isTrue(q.MP_Heritage_Descendants)&&value&&srcQ){hit=rules.find(r=>hierarchyMatchSet(String(r.value),"value_descendants",srcQ).has(value))}return String(hit?.text??q.MP_Texte_Defaut??fallback??"")}
 
@@ -1615,6 +1679,12 @@ function render() {
     if(["showDiff","showPercent","showTrend","showChart"].includes(option))state.comparison[option]=e.currentTarget.checked;
     if(option==="showTrend"&&state.comparison.showTrend&&!state.comparison.showDiff&&!state.comparison.showPercent)state.comparison.showDiff=true;
     render();
+  }));
+  root.querySelectorAll('[data-comparison-export]').forEach(button=>button.addEventListener('click',()=>{
+    const kind=button.dataset.comparisonExport;
+    if(kind==='excel')exportComparisonExcel();
+    else if(kind==='pdf')exportComparisonPdf();
+    else if(kind==='png')void exportComparisonPng();
   }));
   root.querySelector("[data-comparison-chart-type]")?.addEventListener("change",e=>{state.comparison.chartType=e.currentTarget.value;state.comparison.chartMetric="";render();});
   root.querySelector("[data-comparison-chart-metric]")?.addEventListener("change",e=>{state.comparison.chartMetric=e.currentTarget.value;render();});
