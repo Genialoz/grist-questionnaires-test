@@ -691,14 +691,30 @@ function individualPrintHtml(){
   const m=individualExportModel(),pages=m.vm.pages.map(page=>{const sections=page.sections.map(sec=>{const qs=sec.questions.map(q=>exportQuestionHtml(q,state.answers)).join("");const st=first(sec,["Titre","Libelle","Libellé","Nom"],"");return (qs?`<section>${st?`<h3>${escapeHtml(st)}</h3>`:""}${qs}</section>`:"")}).join("");const fiches=(page.repeatableTypes??[]).map(type=>{const list=(state.fiches[type.code]??[]).filter(f=>!f.parentElementId);if(!list.length)return "";return `<section><h3>${escapeHtml(type.labelPlural)}</h3>${list.map((f,i)=>exportFicheHtml(type,f,i)).join("")}</section>`}).join("");if(!sections&&!fiches)return "";return `<div class="page"><h2>${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>${sections}${fiches}</div>`}).join("");
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(m.title)}</title><style>@page{size:A4;margin:15mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#222;line-height:1.35}h1{font-size:22pt;margin:0 0 4mm}h2{font-size:16pt;border-bottom:2px solid #444;padding-bottom:2mm;margin-top:9mm}h3{font-size:13pt;margin:6mm 0 3mm}h4{font-size:11.5pt;margin:0 0 3mm}.meta{background:#f3f4f6;padding:4mm;border-radius:2mm;margin:0 0 7mm}.q{break-inside:avoid;page-break-inside:avoid;margin:0 0 4mm}.ql{font-weight:700;margin-bottom:1mm;break-after:avoid;page-break-after:avoid}.qa{padding:2.5mm 3mm;background:#f7f7f7;border-left:3px solid #777;white-space:normal;break-inside:avoid;page-break-inside:avoid}.fiche{break-inside:auto;page-break-inside:auto;border:1px solid #bbb;border-radius:2mm;padding:4mm;margin:0 0 5mm}.fiche h4{break-after:avoid;page-break-after:avoid}.sub{margin:4mm 0 0 5mm;border-left:2px solid #bbb;padding-left:4mm}table{width:100%;border-collapse:collapse;margin-top:2mm;font-size:9.5pt;break-inside:auto;page-break-inside:auto}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #bbb;padding:2mm;text-align:left;vertical-align:top}thead th{background:#eee}.empty{font-style:italic;color:#666}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(m.title)}</h1><div class="meta">${m.campaignTitle?`<div><strong>Campagne :</strong> ${escapeHtml(m.campaignTitle)}</div>`:""}<div><strong>Réponse :</strong> ${escapeHtml(m.responseCode)}</div><div><strong>Statut :</strong> ${escapeHtml(m.status)}</div>${m.validated?`<div><strong>Validation :</strong> ${escapeHtml(exportDate(m.validated))}</div>`:""}${m.modified?`<div><strong>Dernière modification :</strong> ${escapeHtml(exportDate(m.modified))}</div>`:""}</div>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150));<\/script></body></html>`;
 }
-function exportMyPdf(){try{const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");w.document.open();w.document.write(individualPrintHtml());w.document.close();}catch(e){alert(`Export PDF impossible : ${e?.message||e}`)}}
+function exportMyPdf(){
+  if(state.periodConfig?.enabled){
+    const selected=String(state.selectedPeriod||"");
+    if(!(state.periodConfig.selectable||[]).some(p=>String(p.Periode_Code)===selected)){
+      alert("Sélectionnez une période ouverte pour télécharger ses réponses.");return;
+    }
+    exportPeriodPdf(selected);return;
+  }
+  try{const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");w.document.open();w.document.write(individualPrintHtml());w.document.close();}catch(e){alert(`Export PDF impossible : ${e?.message||e}`)}}
 function individualWorkbook(){
   const m=individualExportModel(),main=[["Questionnaire",m.title],["Campagne",m.campaignTitle],["Réponse",m.responseCode],["Statut",m.status],["Création",exportDate(m.created)],["Dernière modification",exportDate(m.modified)],["Validation",exportDate(m.validated)],[],["Page","Section","Question","Réponse"]],fiches=[["Type","N°","Parent","Question","Réponse"]],matrices=[["Contexte","Matrice","Ligne","Colonne","Valeur"]];
   for(const page of m.vm.pages)for(const sec of page.sections)for(const q of sec.questions){if(isDisplayBlock(q)||isDataTableQuestion(q))continue;const qc=codeOf(q.Question_Code);if(matrixKind(q)){const mx=exportMatrixModel(q,state.answers);mx.body.forEach(r=>r.slice(1).forEach((v,i)=>{if(exportHasValue(v))matrices.push(["Principal",first(q,["Libelle","Libellé","Titre"],qc),r[0],mx.headers[i+1],v])}));}else if(exportHasValue(state.answers[qc]))main.push([first(page,["Titre","Libelle","Libellé","Nom"],""),first(sec,["Titre","Libelle","Libellé","Nom"],""),first(q,["Libelle","Libellé","Titre"],qc),exportAnswerLabel(q,state.answers[qc],state.answers)]);}
   const roots=m.vm.pages.flatMap(p=>p.repeatableTypes??[]);const walk=(type,parent="")=>{const list=(state.fiches[type.code]??[]).filter(f=>parent?String(f.parentElementId)===String(parent.elementId):!f.parentElementId);list.forEach((f,i)=>{const combined={...state.answers,...f.answers};for(const q of visibleFicheQuestions(type,state.definition,combined)){const qc=codeOf(q.Question_Code);if(matrixKind(q)){const mx=exportMatrixModel(q,f.answers);mx.body.forEach(r=>r.slice(1).forEach((v,j)=>{if(exportHasValue(v))matrices.push([`${type.labelSingular} ${i+1}`,first(q,["Libelle","Libellé","Titre"],qc),r[0],mx.headers[j+1],v])}));}else if(exportHasValue(f.answers?.[qc]))fiches.push([type.labelSingular,i+1,parent?codeOf(parent.elementId):"",first(q,["Libelle","Libellé","Titre"],qc),exportAnswerLabel(q,f.answers[qc],f.answers)]);}for(const child of type.children??[])walk(child,f);});};roots.forEach(t=>walk(t));return [{name:"REPONSE",rows:main},{name:"FICHES",rows:fiches},{name:"MATRICES",rows:matrices}];
 }
 function downloadExportBlob(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);}
-function exportMyExcel(){try{const m=individualExportModel(),safe=String(m.responseCode||"reponse").replace(/[^a-z0-9_-]+/gi,"_");downloadExportBlob(writeWorkbook(individualWorkbook()),`Mes_reponses_${safe}.xlsx`);}catch(e){alert(`Export Excel impossible : ${e?.message||e}`)}}
+function exportMyExcel(){
+  if(state.periodConfig?.enabled){
+    const selected=String(state.selectedPeriod||"");
+    if(!(state.periodConfig.selectable||[]).some(p=>String(p.Periode_Code)===selected)){
+      alert("Sélectionnez une période ouverte pour télécharger ses réponses.");return;
+    }
+    exportPeriodExcel(selected);return;
+  }
+  try{const m=individualExportModel(),safe=String(m.responseCode||"reponse").replace(/[^a-z0-9_-]+/gi,"_");downloadExportBlob(writeWorkbook(individualWorkbook()),`Mes_reponses_${safe}.xlsx`);}catch(e){alert(`Export Excel impossible : ${e?.message||e}`)}}
 // Exports du répondant, limités à ses propres éléments déjà chargés et regroupés par période.
 // Aucun changement de la période affichée ni écriture dans Grist pendant un export.
 function periodExportScopes(){
@@ -762,7 +778,18 @@ function exportPeriodPdf(code=null){
     w.document.open();w.document.write(full);w.document.close();
   }catch(e){alert(`Export PDF impossible : ${e?.message||e}`);}
 }
-function respondentExportButtons(){return !state.previewMode&&state.response?`<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger mes réponses en PDF</button><button type="button" class="btn btn-small" data-export-my-excel>Excel</button>`:"";}
+function respondentExportButtons(){
+  if(state.previewMode||!state.response)return "";
+  if(state.periodConfig?.enabled){
+    // L'export général appartient aux questionnaires classiques. Pour un questionnaire
+    // permanent, la barre supérieure concerne seulement la période ouverte choisie.
+    const selected=String(state.selectedPeriod||"");
+    const openPeriod=(state.periodConfig.selectable||[]).some(p=>String(p.Periode_Code)===selected);
+    if(!openPeriod)return ""; // Archives et absence de période : exports dédiés uniquement.
+    return `<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger les réponses de la période en cours (PDF)</button><button type="button" class="btn btn-small" data-export-my-excel>Télécharger la période en cours (Excel)</button>`;
+  }
+  return `<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger mes réponses en PDF</button><button type="button" class="btn btn-small" data-export-my-excel>Excel</button>`;
+}
 
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
   if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
