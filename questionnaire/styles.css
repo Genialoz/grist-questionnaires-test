@@ -225,3 +225,13 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 .comparison-changes td{white-space:nowrap}
 .comparison-trend{font-weight:800;color:#365273}
 .comparison-up{color:#147c67}.comparison-down{color:#b34c35}.comparison-flat{color:#667085}
+
+/* V3.8.2 : tableau comparatif unique et détails repliables. */
+.comparison-changes{margin-top:12px}
+.comparison-changes table{width:100%;min-width:580px}
+.comparison-changes th:first-child{min-width:200px}
+.comparison-changes td:not(:first-child){font-variant-numeric:tabular-nums}
+.comparison-changes thead th{background:#edf2fa;color:#263c62;font-weight:700}
+.comparison-details{margin-top:16px;padding:12px;border:1px solid #dce4f0;border-radius:10px;background:#fff}
+.comparison-details summary{cursor:pointer;font-weight:650;color:#253c65;margin-bottom:8px}
+.comparison-details:not([open]) summary{margin-bottom:0}

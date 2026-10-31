@@ -10,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",showDiff:false,showPercent:false,showTrend:false} };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",showDiff:false,showPercent:false,showTrend:false,optionsOpen:false} };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -972,21 +972,27 @@ function comparisonFormatNumber(value,unit=""){
   const n=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(value);
   return `${value>0?"+":""}${n}${unit==="%"?" points":unit?` ${unit}`:""}`;
 }
-function renderComparisonChanges(leftHtml,rightHtml,options){
-  if(!options.showDiff&&!options.showPercent)return "";
+function renderComparisonTable(leftHtml,rightHtml,options,leftLabel,rightLabel){
   const a=comparisonKpis(leftHtml),b=comparisonKpis(rightHtml),rows=[];
+  const formatValue=x=>x?`${new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(x.number)}${x.unit==="%"?" %":x.unit?` ${x.unit}`:""}`:"—";
   for(const [key,x] of a){
     const y=b.get(key);
+    // On ne compare que les KPI compatibles ; les autres restent consultables dans les détails.
     if(!y||x.unit!==y.unit)continue;
     const delta=y.number-x.number;
     const relative=x.number===0?null:100*delta/Math.abs(x.number);
     const trend=delta>0?"↗":delta<0?"↘":"→";
     const trendClass=delta>0?"comparison-up":delta<0?"comparison-down":"comparison-flat";
     const icon=options.showTrend?`<span class="comparison-trend ${trendClass}" aria-label="${delta>0?"Hausse":delta<0?"Baisse":"Stable"}">${trend}</span> `:"";
-    rows.push(`<tr><th scope="row">${escapeHtml(x.title)} — ${escapeHtml(x.name)}</th>${options.showDiff?`<td>${icon}${escapeHtml(comparisonFormatNumber(delta,x.unit))}</td>`:""}${options.showPercent?`<td>${relative===null?'<span title="Valeur initiale nulle">Non calculable</span>':`${!options.showDiff?icon:""}${escapeHtml(comparisonFormatNumber(relative,""))} %`}</td>`:""}</tr>`);
+    const name=`${x.title} — ${x.name}`;
+    const diff=options.showDiff?`<td>${icon}${escapeHtml(comparisonFormatNumber(delta,x.unit))}</td>`:"";
+    const change=options.showPercent?`<td>${relative===null?'<span title="Valeur initiale nulle">Non calculable</span>':`${!options.showDiff?icon:""}${escapeHtml(comparisonFormatNumber(relative,""))} %`}</td>`:"";
+    rows.push(`<tr><th scope="row">${escapeHtml(name)}</th><td>${escapeHtml(formatValue(x))}</td><td>${escapeHtml(formatValue(y))}</td>${diff}${change}</tr>`);
   }
-  if(!rows.length)return '<div class="help" role="status">Aucune valeur numérique comparable pour ces indicateurs.</div>';
-  return `<section class="comparison-changes"><h4>Écarts entre les deux périodes</h4><div class="comparison-table-scroll"><table><thead><tr><th scope="col">Indicateur</th>${options.showDiff?"<th scope=\"col\">Écart absolu</th>":""}${options.showPercent?"<th scope=\"col\">Évolution relative</th>":""}</tr></thead><tbody>${rows.join("")}</tbody></table></div><p class="help">Une différence entre deux pourcentages est exprimée en points. Une évolution relative n’est pas calculable lorsque la valeur de départ est nulle. Les flèches indiquent le sens de variation, pas une appréciation.</p></section>`;
+  if(!rows.length)return '<div class="help" role="status">Aucun indicateur numérique comparable. Consultez les détails des périodes ci-dessous.</div>';
+  const header=`<thead><tr><th scope="col">Indicateur</th><th scope="col">${escapeHtml(leftLabel)}</th><th scope="col">${escapeHtml(rightLabel)}</th>${options.showDiff?'<th scope="col">Écart absolu</th>':""}${options.showPercent?'<th scope="col">Évolution en %</th>':""}</tr></thead>`;
+  const note=options.showDiff||options.showPercent?'<p class="help">Les écarts de pourcentages sont exprimés en points ; l’évolution relative n’est pas calculable si la valeur initiale est nulle. Les flèches indiquent une variation, pas une appréciation.</p>':"";
+  return `<section class="comparison-changes"><div class="comparison-table-scroll"><table>${header}<tbody>${rows.join("")}</tbody></table></div>${note}</section>`;
 }
 function renderIndicatorComparison(q){
   const periods=comparisonPeriods();
@@ -999,15 +1005,18 @@ function renderIndicatorComparison(q){
   if(!state.comparison.active)return header+renderIndicatorsSafe(q);
   const left=state.comparison.left,right=state.comparison.right;
   const warn=left===right?'<div class="help" role="alert">Sélectionnez deux périodes différentes pour les comparer.</div>':"";
-  let cols="",changes="";
+  let comparisonTable="",details="";
   if(left!==right){
     const leftHtml=renderIndicators(q,left,true),rightHtml=renderIndicators(q,right,true);
-    cols=`<div class="period-comparison-columns"><div class="period-comparison-column"><h4>${escapeHtml(periods.find(p=>String(p.Periode_Code)===left)?.Libelle||left)}</h4>${leftHtml}</div><div class="period-comparison-column"><h4>${escapeHtml(periods.find(p=>String(p.Periode_Code)===right)?.Libelle||right)}</h4>${rightHtml}</div></div>`;
-    changes=renderComparisonChanges(leftHtml,rightHtml,state.comparison);
+    const leftLabel=periods.find(p=>String(p.Periode_Code)===left)?.Libelle||left;
+    const rightLabel=periods.find(p=>String(p.Periode_Code)===right)?.Libelle||right;
+    comparisonTable=renderComparisonTable(leftHtml,rightHtml,state.comparison,leftLabel,rightLabel);
+    // Les graphiques, ventilations et indicateurs non numériques existants ne sont pas perdus.
+    details=`<details class="comparison-details"><summary>Voir les graphiques et indicateurs détaillés</summary><div class="period-comparison-columns"><div class="period-comparison-column"><h4>${escapeHtml(leftLabel)}</h4>${leftHtml}</div><div class="period-comparison-column"><h4>${escapeHtml(rightLabel)}</h4>${rightHtml}</div></div></details>`;
   }
   const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?"checked":""}><span>${label}</span></label>`;
-  const options=`<details class="comparison-options"><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle("showDiff","Afficher les écarts absolus",state.comparison.showDiff)}${toggle("showPercent","Afficher les évolutions en %",state.comparison.showPercent)}${toggle("showTrend","Afficher les flèches de hausse ou de baisse",state.comparison.showTrend)}</div><p class="help">Les options n’affectent pas les données enregistrées. Les écarts s’appliquent aux indicateurs numériques comparables.</p></details>`;
-  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Comparaison des données de votre réponse uniquement, pour les deux périodes choisies.</p><div class="period-comparison-controls">${optionSelect("left",left)}${optionSelect("right",right)}</div>${options}${warn}${cols}${changes}</section>`;
+  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?"open":""}><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle("showDiff","Afficher les écarts absolus",state.comparison.showDiff)}${toggle("showPercent","Afficher les évolutions en %",state.comparison.showPercent)}${toggle("showTrend","Afficher les flèches de hausse ou de baisse",state.comparison.showTrend)}</div><p class="help">Les options n’affectent pas les données enregistrées. Les écarts s’appliquent aux indicateurs numériques comparables.</p></details>`;
+  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Comparaison des données de votre réponse uniquement, pour les deux périodes choisies.</p><div class="period-comparison-controls">${optionSelect("left",left)}${optionSelect("right",right)}</div>${options}${warn}${comparisonTable}${details}</section>`;
 }
 function personalizedDescriptionText(q,answers){const fallback=first(q,["Aide","Description","Texte_aide"],"");if(!isTrue(q.MP_Actif))return fallback;const rules=(()=>{try{const x=JSON.parse(q.MP_Regles||"[]");return Array.isArray(x)?x:[]}catch{return []}})(),source=String(q.MP_Question_Source||""),srcQ=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===source);let value=source?answers?.[source]:"";if((value===""||value==null)&&srcQ&&campaignLocksQuestion(srcQ)){const p=campaignPersonalization();if(p&&String(p.questionCode)===source)value=p.value}value=String(codeOf(value)||value||"");let hit=rules.find(r=>String(r.value)===value);if(!hit&&isTrue(q.MP_Heritage_Descendants)&&value&&srcQ){hit=rules.find(r=>hierarchyMatchSet(String(r.value),"value_descendants",srcQ).has(value))}return String(hit?.text??q.MP_Texte_Defaut??fallback??"")}
 
@@ -1513,7 +1522,11 @@ function render() {
   root.querySelectorAll("[data-comparison-period]").forEach(el=>el.addEventListener("change",e=>{
     state.comparison[e.currentTarget.dataset.comparisonPeriod]=e.currentTarget.value;render();
   }));
+  root.querySelectorAll(".comparison-options").forEach(el=>el.addEventListener("toggle",()=>{
+    state.comparison.optionsOpen=el.open;
+  }));
   root.querySelectorAll("[data-comparison-option]").forEach(el=>el.addEventListener("change",e=>{
+    state.comparison.optionsOpen=true;
     const option=e.currentTarget.dataset.comparisonOption;
     if(["showDiff","showPercent","showTrend"].includes(option))state.comparison[option]=e.currentTarget.checked;
     if(option==="showTrend"&&state.comparison.showTrend&&!state.comparison.showDiff&&!state.comparison.showPercent)state.comparison.showDiff=true;
