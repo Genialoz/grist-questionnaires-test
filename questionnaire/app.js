@@ -1195,7 +1195,23 @@ function renderIndicatorComparison(q){
   const referenceSelect=selectedPeriods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}" ${String(p.Periode_Code)===state.comparison.reference?'selected':''}>${escapeHtml(p.Libelle||p.Periode_Code)}</option>`).join('');
   const referenceControl=state.comparison.showDiff||state.comparison.showPercent?`<label class="comparison-reference-field">Période de référence<select data-comparison-reference>${referenceSelect}</select></label>`:'';
   const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?'checked':''}><span>${label}</span></label>`;
-  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?'open':''}><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle('showDiff','Afficher les écarts absolus',state.comparison.showDiff)}${toggle('showPercent','Afficher les évolutions en %',state.comparison.showPercent)}${toggle('showTrend','Afficher les flèches de hausse ou de baisse',state.comparison.showTrend)}${toggle('showChart','Afficher un graphique comparatif',state.comparison.showChart)}<label class="comparison-reference-field">Total dans le tableau<select data-comparison-table-totals><option value="auto" ${state.comparison.tableTotals==='auto'?'selected':''}>Automatique (plusieurs modalités)</option><option value="always" ${state.comparison.tableTotals==='always'?'selected':''}>Toujours afficher</option><option value="never" ${state.comparison.tableTotals==='never'?'selected':''}>Ne pas afficher</option></select></label>${toggle('chartTotals','Afficher le total dans le graphique (hors empilé)',state.comparison.chartTotals)}</div>${referenceControl}<p class="help">Les options d’écarts sont facultatives. Chaque période est comparée à la référence choisie, sans modifier les réponses.</p></details>`;
+  // Les trois panneaux conservent les attributs data-comparison-* utilisés par les événements existants.
+  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?'open':''}><summary>Options d’affichage</summary><div class="comparison-settings-grid">
+    <section class="comparison-settings-group" aria-label="Comparaison"><h4>Comparaison</h4><p class="comparison-settings-hint">Colonnes facultatives du tableau</p>
+      ${toggle('showDiff','Écarts absolus',state.comparison.showDiff)}
+      ${toggle('showPercent','Évolutions en %',state.comparison.showPercent)}
+      ${toggle('showTrend','Flèches de variation',state.comparison.showTrend)}
+      ${referenceControl}
+    </section>
+    <section class="comparison-settings-group" aria-label="Totaux"><h4>Totaux</h4><p class="comparison-settings-hint">Présentation des lignes de total</p>
+      <label class="comparison-reference-field">Dans le tableau<select data-comparison-table-totals><option value="auto" ${state.comparison.tableTotals==='auto'?'selected':''}>Automatique (plusieurs modalités)</option><option value="always" ${state.comparison.tableTotals==='always'?'selected':''}>Toujours afficher</option><option value="never" ${state.comparison.tableTotals==='never'?'selected':''}>Ne pas afficher</option></select></label>
+      ${toggle('chartTotals','Dans le graphique (hors empilé)',state.comparison.chartTotals)}
+    </section>
+    <section class="comparison-settings-group" aria-label="Graphique"><h4>Graphique</h4><p class="comparison-settings-hint">Visualisation complémentaire</p>
+      ${toggle('showChart','Afficher un graphique',state.comparison.showChart)}
+      <p class="comparison-settings-hint">Le type de graphique et l’indicateur se choisissent sous le tableau.</p>
+    </section>
+  </div></details>`;
   let table='',chart='',details='';
   if(selectedPeriods.length>=2){
     const series=comparisonSeries(q,selectedPeriods);
