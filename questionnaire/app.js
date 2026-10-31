@@ -2229,7 +2229,7 @@ function archiveCopyButton(label,primary,fn){
  b.className=primary?"btn btn-primary":"btn";
  b.addEventListener("click",fn);return b;
 }
-function chooseArchiveCopyTarget(destinations,ficheTitle,sourcePeriod){
+function chooseArchiveCopyTarget(destinations,ficheTitle,sourcePeriod,childCount){
  return archiveCopyDialog("Reprendre une fiche",panel=>{
   const info=document.createElement("p");info.textContent=`Fiche : ${ficheTitle}`;panel.append(info);
   const source=document.createElement("p");source.textContent=`Période d'origine : ${sourcePeriod}`;panel.append(source);
@@ -2238,9 +2238,14 @@ function chooseArchiveCopyTarget(destinations,ficheTitle,sourcePeriod){
   if(destinations.length!==1){const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="Choisir une période…";select.append(placeholder);}
   destinations.forEach(p=>{const opt=document.createElement("option");opt.value=p.Periode_Code;opt.textContent=p.Libelle||p.Periode_Code;select.append(opt);});
   label.append(select);panel.append(label);
-  const subLabel=document.createElement("label");subLabel.style.cssText="display:flex;gap:8px;align-items:center;margin-top:16px";
-  const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=true;checkbox.dataset.archiveCopyChildren="";
-  subLabel.append(checkbox,document.createTextNode("Copier également les sous-fiches associées"));panel.append(subLabel);
+  if(childCount>0){
+   const subLabel=document.createElement("label");
+   subLabel.style.cssText="display:inline-flex;align-items:center;justify-content:flex-start;gap:8px;margin-top:16px;cursor:pointer;width:auto;max-width:100%;font-weight:400";
+   const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=true;checkbox.dataset.archiveCopyChildren="";
+   checkbox.style.cssText="display:inline-block;flex:0 0 16px;width:16px;min-width:16px;max-width:16px;height:16px;min-height:16px;margin:0;padding:0;vertical-align:middle";
+   const text=document.createElement("span");text.textContent=`Copier aussi les sous-fiches (${childCount})`;text.style.cssText="display:inline;flex:0 1 auto;width:auto;margin:0";
+   subLabel.append(checkbox,text);panel.append(subLabel);
+  }
   const note=document.createElement("p");note.textContent="L'original restera dans les archives.";note.style.cssText="font-size:.9rem;color:#526070;margin-top:12px";panel.append(note);
  },(actions,finish)=>{
   actions.append(archiveCopyButton("Annuler",false,()=>finish(null)));
@@ -2269,7 +2274,12 @@ async function copyArchivedFicheToPeriod(typeCode,index){
  const sourceFiche=state.fiches[typeCode]?.[index];
  const sourceType=findRepeatableType(buildViewModel(state.definition,state.answers).pages[state.pageIndex]?.repeatableTypes??[],typeCode);
  const sourceCard=sourceFiche&&sourceType?ficheCardText(sourceType,state.definition,sourceFiche,index):null;
- const request=await chooseArchiveCopyTarget(destinations,sourceCard?.title||"Fiche",periodLabel(state.periodConfig,sourceFiche?.periodeCode));
+ const collectChildren=(ownerType,ownerId)=> (ownerType.children??[]).flatMap(childType=>
+   (state.fiches[childType.code]??[]).filter(f=>String(f.parentElementId)===String(ownerId)).map(f=>({type:childType,answers:structuredClone(f.answers??{}),source:f,children:collectChildren(childType,f.elementId)})));
+ const children=sourceType&&sourceFiche?collectChildren(sourceType,sourceFiche.elementId):[];
+ const descendants=nodes=>nodes.flatMap(n=>[n,...descendants(n.children)]);
+ const allChildren=descendants(children);
+ const request=await chooseArchiveCopyTarget(destinations,sourceCard?.title||"Fiche",periodLabel(state.periodConfig,sourceFiche?.periodeCode),allChildren.length);
  if(!request)return;
  const destination=request.destination;
  const target=destinations.find(p=>String(p.Periode_Code)===String(destination));
@@ -2281,11 +2291,6 @@ async function copyArchivedFicheToPeriod(typeCode,index){
  if(String(source.periodeCode)===String(destination)){showSaveError(new Error("Choisissez une période différente de celle de la fiche d'origine."));return;}
  const targetRows=(state.fiches[typeCode]??[]).filter(f=>String(f.periodeCode||"")===String(destination));
  if(!canAddFiche(type,targetRows)){showSaveError(new Error("Le nombre maximal de fiches est atteint pour la période de destination."));return;}
- const collectChildren=(ownerType,ownerId)=> (ownerType.children??[]).flatMap(childType=>
-   (state.fiches[childType.code]??[]).filter(f=>String(f.parentElementId)===String(ownerId)).map(f=>({type:childType,answers:structuredClone(f.answers??{}),source:f,children:collectChildren(childType,f.elementId)})));
- const children=collectChildren(type,source.elementId);
- const descendants=nodes=>nodes.flatMap(n=>[n,...descendants(n.children)]);
- const allChildren=descendants(children);
  const childrenToCopy=request.copyChildren?children:[];
  if(request.copyChildren && allChildren.some(c=>!c.type.allowAdd||c.source.readOnlyImport)){showSaveError(new Error("Certaines sous-fiches ne peuvent pas être recopiées automatiquement."));return;}
  if(state.previewMode){showSaveError(new Error("La reprise entre périodes doit être testée depuis une campagne TEST, et non depuis l'aperçu."));return;}
