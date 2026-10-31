@@ -210,3 +210,18 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 .period-comparison-column>h4{margin:0 0 12px;font-size:1.05rem;color:#253c65}
 .period-comparison-column .indicator-card{max-width:100%}
 @media(max-width:800px){.period-comparison-columns{grid-template-columns:1fr}}
+
+/* Comparaison : options facultatives, compactes et sans étirement des cases. */
+.comparison-options{border:1px solid #dce4f0;border-radius:9px;background:#fff;padding:10px 12px;margin:0 0 16px}
+.comparison-options summary{cursor:pointer;font-weight:650;color:#253c65}
+.comparison-option-list{display:flex;gap:9px 18px;flex-wrap:wrap;margin:12px 0}
+.comparison-option{display:inline-flex;align-items:center;gap:7px;font-weight:400;cursor:pointer}
+.comparison-option input[type="checkbox"]{width:16px!important;height:16px!important;flex:0 0 16px;margin:0}
+.comparison-changes{margin-top:18px;padding:12px;border:1px solid #dce4f0;background:white;border-radius:10px}
+.comparison-changes h4{margin:0 0 10px}
+.comparison-table-scroll{overflow-x:auto}
+.comparison-changes table{width:100%;border-collapse:collapse;text-align:left}
+.comparison-changes th,.comparison-changes td{padding:9px 10px;border-bottom:1px solid #e6ebf1}
+.comparison-changes td{white-space:nowrap}
+.comparison-trend{font-weight:800;color:#365273}
+.comparison-up{color:#147c67}.comparison-down{color:#b34c35}.comparison-flat{color:#667085}

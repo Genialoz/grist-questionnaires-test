@@ -10,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:""} };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",showDiff:false,showPercent:false,showTrend:false} };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -934,6 +934,60 @@ function renderIndicators(q,periodOverride=null,respondentOnly=false){const toke
 function renderIndicatorsSafe(q){try{return renderIndicators(q)}catch(e){console.error("[Gristionnaire] Erreur bloc Indicateurs",codeOf(q?.Question_Code),e);const qc=escapeHtml(codeOf(q?.Question_Code));const title=escapeHtml(first(q,["Libelle","Libellé","Titre"],"Indicateurs"));return `<section class="content-indicators" id="indicator-${qc}" data-display-block="${qc}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${title}</h3><div class="help"><strong>Impossible de calculer ce bloc Indicateurs.</strong><br><small>Les autres éléments de la section restent accessibles.</small></div></section>`}}
 // V3.8 TEST : les comparaisons sont strictement limitées à la réponse courante.
 function comparisonPeriods(){return state.periodConfig?.enabled?(state.periodConfig.periods||[]).filter(p=>["ouverte","cloturee","clôturée"].includes(String(p.Statut||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""))):[];}
+// Les calculs complémentaires sont facultatifs : seuls les KPI numériques ayant
+// le même intitulé et la même unité dans les deux périodes sont comparés.
+function comparisonParseNumber(text){
+  const value=String(text||"").trim().replace(/[\u00a0\u202f\s]/g,"");
+  // Pas de conversion silencieuse d'une chaîne qualitative en nombre.
+  if(!/^[+\-]?(?:\d[\d.,]*|[.,]\d+)(?:%|€)?$/.test(value))return null;
+  const unit=value.endsWith("%")?"%":value.endsWith("€")?"€":"";
+  const raw=unit?value.slice(0,-1):value;
+  const comma=raw.lastIndexOf(","),dot=raw.lastIndexOf(".");
+  const decimal=comma>dot?",":dot>comma?".":"";
+  let normal=raw;
+  if(comma>=0&&dot>=0)normal=raw.replace(decimal===","?/\./g:/,/g,"").replace(decimal, ".");
+  else if(decimal===",")normal=raw.replace(",",".");
+  else if(decimal==="."&&/\.\d{3}$/.test(raw)&&!raw.includes(","))normal=raw.replace(".","");
+  const number=Number(normal);
+  return Number.isFinite(number)?{number,unit}:null;
+}
+function comparisonKpis(html){
+  const tmp=document.createElement("div");tmp.innerHTML=html;
+  const found=new Map();
+  tmp.querySelectorAll(".indicator-card").forEach(card=>{
+    const title=card.querySelector("h4")?.textContent?.trim()||"";
+    card.querySelectorAll("small").forEach(label=>{
+      // La disposition KPI du questionnaire est <small>libellé</small><div>valeur</div>.
+      const valueEl=label.nextElementSibling;
+      if(!title||!valueEl||valueEl.tagName!=="DIV")return;
+      const metric=comparisonParseNumber(valueEl.textContent);
+      if(!metric)return;
+      const name=label.textContent.trim();
+      if(name)found.set(`${title}\u0000${name}`,{title,name,...metric});
+    });
+  });
+  return found;
+}
+function comparisonFormatNumber(value,unit=""){
+  const n=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(value);
+  return `${value>0?"+":""}${n}${unit==="%"?" points":unit?` ${unit}`:""}`;
+}
+function renderComparisonChanges(leftHtml,rightHtml,options){
+  if(!options.showDiff&&!options.showPercent)return "";
+  const a=comparisonKpis(leftHtml),b=comparisonKpis(rightHtml),rows=[];
+  for(const [key,x] of a){
+    const y=b.get(key);
+    if(!y||x.unit!==y.unit)continue;
+    const delta=y.number-x.number;
+    const relative=x.number===0?null:100*delta/Math.abs(x.number);
+    const trend=delta>0?"↗":delta<0?"↘":"→";
+    const trendClass=delta>0?"comparison-up":delta<0?"comparison-down":"comparison-flat";
+    const icon=options.showTrend?`<span class="comparison-trend ${trendClass}" aria-label="${delta>0?"Hausse":delta<0?"Baisse":"Stable"}">${trend}</span> `:"";
+    rows.push(`<tr><th scope="row">${escapeHtml(x.title)} — ${escapeHtml(x.name)}</th>${options.showDiff?`<td>${icon}${escapeHtml(comparisonFormatNumber(delta,x.unit))}</td>`:""}${options.showPercent?`<td>${relative===null?'<span title="Valeur initiale nulle">Non calculable</span>':`${!options.showDiff?icon:""}${escapeHtml(comparisonFormatNumber(relative,""))} %`}</td>`:""}</tr>`);
+  }
+  if(!rows.length)return '<div class="help" role="status">Aucune valeur numérique comparable pour ces indicateurs.</div>';
+  return `<section class="comparison-changes"><h4>Écarts entre les deux périodes</h4><div class="comparison-table-scroll"><table><thead><tr><th scope="col">Indicateur</th>${options.showDiff?"<th scope=\"col\">Écart absolu</th>":""}${options.showPercent?"<th scope=\"col\">Évolution relative</th>":""}</tr></thead><tbody>${rows.join("")}</tbody></table></div><p class="help">Une différence entre deux pourcentages est exprimée en points. Une évolution relative n’est pas calculable lorsque la valeur de départ est nulle. Les flèches indiquent le sens de variation, pas une appréciation.</p></section>`;
+}
 function renderIndicatorComparison(q){
   const periods=comparisonPeriods();
   if(periods.length<2||!state.response)return renderIndicatorsSafe(q);
@@ -945,8 +999,15 @@ function renderIndicatorComparison(q){
   if(!state.comparison.active)return header+renderIndicatorsSafe(q);
   const left=state.comparison.left,right=state.comparison.right;
   const warn=left===right?'<div class="help" role="alert">Sélectionnez deux périodes différentes pour les comparer.</div>':"";
-  const cols=left===right?"":`<div class="period-comparison-columns"><div class="period-comparison-column"><h4>${escapeHtml(periods.find(p=>String(p.Periode_Code)===left)?.Libelle||left)}</h4>${renderIndicators(q,left,true)}</div><div class="period-comparison-column"><h4>${escapeHtml(periods.find(p=>String(p.Periode_Code)===right)?.Libelle||right)}</h4>${renderIndicators(q,right,true)}</div></div>`;
-  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Comparaison des données de votre réponse uniquement, pour les deux périodes choisies.</p><div class="period-comparison-controls">${optionSelect("left",left)}${optionSelect("right",right)}</div>${warn}${cols}</section>`;
+  let cols="",changes="";
+  if(left!==right){
+    const leftHtml=renderIndicators(q,left,true),rightHtml=renderIndicators(q,right,true);
+    cols=`<div class="period-comparison-columns"><div class="period-comparison-column"><h4>${escapeHtml(periods.find(p=>String(p.Periode_Code)===left)?.Libelle||left)}</h4>${leftHtml}</div><div class="period-comparison-column"><h4>${escapeHtml(periods.find(p=>String(p.Periode_Code)===right)?.Libelle||right)}</h4>${rightHtml}</div></div>`;
+    changes=renderComparisonChanges(leftHtml,rightHtml,state.comparison);
+  }
+  const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?"checked":""}><span>${label}</span></label>`;
+  const options=`<details class="comparison-options"><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle("showDiff","Afficher les écarts absolus",state.comparison.showDiff)}${toggle("showPercent","Afficher les évolutions en %",state.comparison.showPercent)}${toggle("showTrend","Afficher les flèches de hausse ou de baisse",state.comparison.showTrend)}</div><p class="help">Les options n’affectent pas les données enregistrées. Les écarts s’appliquent aux indicateurs numériques comparables.</p></details>`;
+  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Comparaison des données de votre réponse uniquement, pour les deux périodes choisies.</p><div class="period-comparison-controls">${optionSelect("left",left)}${optionSelect("right",right)}</div>${options}${warn}${cols}${changes}</section>`;
 }
 function personalizedDescriptionText(q,answers){const fallback=first(q,["Aide","Description","Texte_aide"],"");if(!isTrue(q.MP_Actif))return fallback;const rules=(()=>{try{const x=JSON.parse(q.MP_Regles||"[]");return Array.isArray(x)?x:[]}catch{return []}})(),source=String(q.MP_Question_Source||""),srcQ=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===source);let value=source?answers?.[source]:"";if((value===""||value==null)&&srcQ&&campaignLocksQuestion(srcQ)){const p=campaignPersonalization();if(p&&String(p.questionCode)===source)value=p.value}value=String(codeOf(value)||value||"");let hit=rules.find(r=>String(r.value)===value);if(!hit&&isTrue(q.MP_Heritage_Descendants)&&value&&srcQ){hit=rules.find(r=>hierarchyMatchSet(String(r.value),"value_descendants",srcQ).has(value))}return String(hit?.text??q.MP_Texte_Defaut??fallback??"")}
 
@@ -1451,6 +1512,12 @@ function render() {
   }));
   root.querySelectorAll("[data-comparison-period]").forEach(el=>el.addEventListener("change",e=>{
     state.comparison[e.currentTarget.dataset.comparisonPeriod]=e.currentTarget.value;render();
+  }));
+  root.querySelectorAll("[data-comparison-option]").forEach(el=>el.addEventListener("change",e=>{
+    const option=e.currentTarget.dataset.comparisonOption;
+    if(["showDiff","showPercent","showTrend"].includes(option))state.comparison[option]=e.currentTarget.checked;
+    if(option==="showTrend"&&state.comparison.showTrend&&!state.comparison.showDiff&&!state.comparison.showPercent)state.comparison.showDiff=true;
+    render();
   }));
   root.querySelector("[data-period-select]")?.addEventListener("change",e=>{
     if(state.ficheEditor||state.subFicheEditor||state.principalDirty){e.target.value=state.selectedPeriod;if(state.principalDirty)showSaveError(new Error("Enregistrez les questions générales avant de changer de période."));return;}
