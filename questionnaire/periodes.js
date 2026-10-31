@@ -5,8 +5,11 @@ const escapeHtml = v => text(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;","
 const rows = raw => (raw?.id??[]).map((id,i)=>Object.fromEntries([["id",id],...Object.entries(raw).filter(([k])=>k!=="id").map(([k,values])=>[k,values[i]])]));
 const code = v => Array.isArray(v)?String(v[1]??""):text(v);
 const norm = v => text(v).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-export async function readPeriodConfiguration(api,definition){
-  const questionnaireRef=code(definition?.version?.Questionnaire_Code);
+export async function readPeriodConfiguration(api,definition,campaign=null){
+  // La campagne est le contexte de diffusion effectif, y compris pour un ancien
+  // lien : sa référence au questionnaire prévaut sur celle d'une vieille version.
+  // En aperçu sans campagne, conserver le rattachement de la version.
+  const questionnaireRef=code(campaign?.Questionnaire_Code)||code(definition?.version?.Questionnaire_Code);
   if(!questionnaireRef)return null;
   try {
     // Questionnaire_Code is a Grist Ref in VERSIONS_QUESTIONNAIRES (numeric row id),
