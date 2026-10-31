@@ -1035,9 +1035,20 @@ function comparisonSvgChart(items,labels,type){
   const fmt=x=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(x);
   const svgText=(x,y,value,attrs='')=>`<text x="${x}" y="${y}" ${attrs}>${escapeHtml(String(value))}</text>`;
   const values=labels.map((_,i)=>type==='stacked'?items.reduce((sum,row)=>sum+row.numbers[i],0):items[0].numbers[i]);
-  const lo=Math.min(0,...values),hi=Math.max(0,...values),padding=(hi-lo)||1,max=hi+padding*.13,min=lo-padding*.08;
+  // Graduations lisibles : pas arrondis (1, 2, 2,5, 5 × 10^n),
+  // et pas entier dès que toutes les données sont des comptages entiers.
+  const allInteger=items.every(row=>row.numbers.every(Number.isInteger));
+  const lo=Math.min(0,...values),hi=Math.max(0,...values);
+  const span=Math.max(hi-lo,allInteger?1:Math.abs(hi)*0.1,0.001);
+  const rough=span/4;
+  const magnitude=10**Math.floor(Math.log10(rough));
+  const niceStep=[1,2,2.5,5,10].map(x=>x*magnitude).find(x=>x>=rough)||10*magnitude;
+  const step=allInteger?Math.max(1,Math.ceil(niceStep)):niceStep;
+  let min=Math.floor(lo/step)*step,max=Math.ceil(hi/step)*step;
+  if(min===max)max=min+step;
   const y=v=>top+(max-v)/(max-min)*plotH,base=y(0);
-  const ticks=[0,.25,.5,.75,1].map(t=>{const value=min+(max-min)*t,yy=y(value);return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e0e8f1"/>${svgText(left-9,yy+5,fmt(value),'text-anchor="end" font-size="12" fill="#50647b"')}`;}).join('');
+  const tickValues=Array.from({length:Math.min(12,Math.round((max-min)/step)+1)},(_,i)=>min+i*step);
+  const ticks=tickValues.map(value=>{const yy=y(value);return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e0e8f1"/>${svgText(left-9,yy+5,fmt(allInteger?Math.round(value):Number(value.toPrecision(10))),'text-anchor="end" font-size="12" fill="#50647b"')}`;}).join('');
   const xs=labels.map((_,i)=>left+plotW*(i+.5)/n);
   const barWidth=Math.min(95,plotW/n*.65);
   let content='';
@@ -1059,7 +1070,9 @@ function renderComparisonChart(series){
   if(!metrics.length)return '<div class="help">Aucun indicateur numérique commun à toutes les périodes sélectionnées pour construire un graphique.</div>';
   const type=state.comparison.chartType||'bar';
   const opts=type==='stacked'?groups.map(([key,items])=>({key,label:`${items[0].title} (${items.length} composantes)`})):metrics.map(m=>({key:m.key,label:`${m.title} — ${m.name}`}));
-  if(!opts.length)return '<section class="comparison-chart-box"><p class="help">Aucune ventilation compatible avec un graphique empilé.</p></section>';
+  // Toujours afficher le sélecteur de type : une ventilation empilée impossible
+  // ne doit jamais enfermer le répondant dans un écran sans moyen de revenir.
+  if(!opts.length)return `<section class="comparison-chart-box"><div class="comparison-chart-fields"><label>Type de graphique<select data-comparison-chart-type><option value="bar">Barres</option><option value="line">Courbe</option><option value="stacked" selected>Barres empilées</option></select></label></div><p class="help" role="status">Aucune ventilation compatible avec un graphique empilé pour ces indicateurs. Sélectionnez « Barres » ou « Courbe » pour afficher un autre graphique.</p></section>`;
   if(!opts.some(x=>x.key===state.comparison.chartMetric))state.comparison.chartMetric=opts[0].key;
   const selected=state.comparison.chartMetric;
   const items=type==='stacked'?(groups.find(([k])=>k===selected)?.[1]||[]):metrics.filter(x=>x.key===selected);
