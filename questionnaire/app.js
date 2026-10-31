@@ -10,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",showDiff:false,showPercent:false,showTrend:false,optionsOpen:false,showChart:false,chartType:"bar",chartMetric:""} };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",selected:[],reference:"",showDiff:false,showPercent:false,showTrend:false,optionsOpen:false,showChart:false,chartType:"bar",chartMetric:""} };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -972,103 +972,127 @@ function comparisonFormatNumber(value,unit=""){
   const n=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(value);
   return `${value>0?"+":""}${n}${unit==="%"?" points":unit?` ${unit}`:""}`;
 }
-function renderComparisonTable(leftHtml,rightHtml,options,leftLabel,rightLabel){
-  const a=comparisonKpis(leftHtml),b=comparisonKpis(rightHtml),rows=[];
-  const formatValue=x=>x?`${new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(x.number)}${x.unit==="%"?" %":x.unit?` ${x.unit}`:""}`:"—";
-  for(const [key,x] of a){
-    const y=b.get(key);
-    // On ne compare que les KPI compatibles ; les autres restent consultables dans les détails.
-    if(!y||x.unit!==y.unit)continue;
-    const delta=y.number-x.number;
-    const relative=x.number===0?null:100*delta/Math.abs(x.number);
-    const trend=delta>0?"↗":delta<0?"↘":"→";
-    const trendClass=delta>0?"comparison-up":delta<0?"comparison-down":"comparison-flat";
-    const icon=options.showTrend?`<span class="comparison-trend ${trendClass}" aria-label="${delta>0?"Hausse":delta<0?"Baisse":"Stable"}">${trend}</span> `:"";
-    const name=`${x.title} — ${x.name}`;
-    const diff=options.showDiff?`<td>${icon}${escapeHtml(comparisonFormatNumber(delta,x.unit))}</td>`:"";
-    const change=options.showPercent?`<td>${relative===null?'<span title="Valeur initiale nulle">Non calculable</span>':`${!options.showDiff?icon:""}${escapeHtml(comparisonFormatNumber(relative,""))} %`}</td>`:"";
-    rows.push(`<tr><th scope="row">${escapeHtml(name)}</th><td>${escapeHtml(formatValue(x))}</td><td>${escapeHtml(formatValue(y))}</td>${diff}${change}</tr>`);
-  }
-  if(!rows.length)return '<div class="help" role="status">Aucun indicateur numérique comparable. Consultez les détails des périodes ci-dessous.</div>';
-  const header=`<thead><tr><th scope="col">Indicateur</th><th scope="col">${escapeHtml(leftLabel)}</th><th scope="col">${escapeHtml(rightLabel)}</th>${options.showDiff?'<th scope="col">Écart absolu</th>':""}${options.showPercent?'<th scope="col">Évolution en %</th>':""}</tr></thead>`;
-  const note=options.showDiff||options.showPercent?'<p class="help">Les écarts de pourcentages sont exprimés en points ; l’évolution relative n’est pas calculable si la valeur initiale est nulle. Les flèches indiquent une variation, pas une appréciation.</p>':"";
-  return `<section class="comparison-changes"><div class="comparison-table-scroll"><table>${header}<tbody>${rows.join("")}</tbody></table></div>${note}</section>`;
+// V3.9 — Une seule extraction par période, sans lecture de réponses d'autres participants.
+function comparisonSeries(q,periods){
+  return periods.map(p=>{
+    const html=renderIndicators(q,String(p.Periode_Code),true);
+    return {code:String(p.Periode_Code),label:String(p.Libelle||p.Periode_Code),html,kpis:comparisonKpis(html)};
+  });
 }
-// V3.8.3 — visualisations SVG locales, sans bibliothèque ni envoi de données.
-function comparisonChartData(leftHtml,rightHtml){
-  const left=comparisonKpis(leftHtml),right=comparisonKpis(rightHtml);
-  const metrics=[];
-  for(const [key,a] of left){const b=right.get(key);if(b&&a.unit===b.unit)metrics.push({key,title:a.title,name:a.name,unit:a.unit,a:a.number,b:b.number});}
+function comparisonFormatValue(metric){
+  if(!metric)return '—';
+  const formatted=new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(metric.number);
+  return `${formatted}${metric.unit==='%'?' %':metric.unit?` ${metric.unit}`:''}`;
+}
+function comparisonNumericRows(series){
+  if(series.length<2)return [];
+  // L'union des indicateurs préserve les cas où une période n'a pas de valeur.
+  const keys=[...new Set(series.flatMap(p=>[...p.kpis.keys()]))];
+  return keys.map(key=>{
+    const values=series.map(p=>p.kpis.get(key)||null);
+    const metrics=values.filter(Boolean);
+    if(!metrics.length||new Set(metrics.map(x=>x.unit)).size!==1)return null;
+    return {key,unit:metrics[0].unit,title:metrics[0].title,name:metrics[0].name,values};
+  }).filter(Boolean);
+}
+function renderComparisonTable(series,options,reference){
+  const rows=comparisonNumericRows(series);
+  if(!rows.length)return '<div class="help" role="status">Aucun indicateur numérique comparable. Consultez les détails des périodes ci-dessous.</div>';
+  const referenceIndex=Math.max(0,series.findIndex(p=>p.code===reference));
+  const others=series.map((p,index)=>({p,index})).filter(x=>x.index!==referenceIndex);
+  const extraHead=others.map(({p})=>`${options.showDiff?`<th scope="col">Écart vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}${options.showPercent?`<th scope="col">Évolution vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}`).join('');
+  const header=`<thead><tr><th scope="col">Indicateur</th>${series.map(p=>`<th scope="col">${escapeHtml(p.label)}</th>`).join('')}${extraHead}</tr></thead>`;
+  const body=rows.map(row=>{
+    const base=row.values[referenceIndex];
+    const cell=row.values.map(v=>`<td>${escapeHtml(comparisonFormatValue(v))}</td>`).join('');
+    const extras=others.map(({index})=>{
+      const current=row.values[index];
+      if(!base||!current)return `${options.showDiff?'<td>—</td>':''}${options.showPercent?'<td>—</td>':''}`;
+      const delta=current.number-base.number,ratio=base.number===0?null:100*delta/Math.abs(base.number);
+      const trend=delta>0?'↗':delta<0?'↘':'→';
+      const trendClass=delta>0?'comparison-up':delta<0?'comparison-down':'comparison-flat';
+      const icon=options.showTrend?`<span class="comparison-trend ${trendClass}" aria-label="${delta>0?'Hausse':delta<0?'Baisse':'Stable'}">${trend}</span> `:'';
+      const diff=options.showDiff?`<td>${icon}${escapeHtml(comparisonFormatNumber(delta,row.unit))}</td>`:'';
+      const percent=options.showPercent?`<td>${ratio===null?'Non calculable':`${!options.showDiff?icon:''}${escapeHtml(comparisonFormatNumber(ratio,''))} %`}</td>`:'';
+      return diff+percent;
+    }).join('');
+    return `<tr><th scope="row">${escapeHtml(row.title+' — '+row.name)}</th>${cell}${extras}</tr>`;
+  }).join('');
+  const note=options.showDiff||options.showPercent?'<p class="help">Chaque écart compare la période indiquée à la référence choisie. Pour les indicateurs en %, les écarts sont en points ; une valeur de référence nulle rend l’évolution relative non calculable.</p>':'';
+  return `<section class="comparison-changes"><div class="comparison-table-scroll"><table>${header}<tbody>${body}</tbody></table></div>${note}</section>`;
+}
+function comparisonChartData(series){
+  const rows=comparisonNumericRows(series);
+  const metrics=rows.filter(row=>row.values.every(Boolean)).map(row=>({...row,numbers:row.values.map(v=>v.number)}));
   const groups=new Map();
   for(const m of metrics){const key=`${m.title}\u0000${m.unit}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(m);}
-  return {metrics,groups:[...groups.entries()].filter(([,items])=>items.length>=2&&items.every(x=>x.a>=0&&x.b>=0))};
+  return {metrics,groups:[...groups.entries()].filter(([,items])=>items.length>=2&&items.every(x=>x.numbers.every(v=>v>=0)))};
 }
 function comparisonSvgChart(items,labels,type){
-  // SVG statique : valeurs numériques vérifiées avant rendu, étiquettes échappées.
-  const width=760,height=295,left=75,right=35,top=25,bottom=76,plotW=width-left-right,plotH=height-top-bottom;
-  const fmt=n=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(n);
+  if(!items.length||!labels.length)return '';
+  const n=labels.length,width=Math.max(760,n*105+150),height=310,left=75,right=35,top=25,bottom=96;
+  const plotW=width-left-right,plotH=height-top-bottom;
+  const fmt=x=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(x);
   const svgText=(x,y,value,attrs='')=>`<text x="${x}" y="${y}" ${attrs}>${escapeHtml(String(value))}</text>`;
-  if(!items.length)return '';
-  const dataA=type==='stacked'?items.reduce((s,x)=>s+x.a,0):items[0].a;
-  const dataB=type==='stacked'?items.reduce((s,x)=>s+x.b,0):items[0].b;
-  const lo=Math.min(0,dataA,dataB),hi=Math.max(0,dataA,dataB);
-  const padding=(hi-lo)||1,max=hi+padding*.13,min=lo-padding*.08;
+  const values=labels.map((_,i)=>type==='stacked'?items.reduce((sum,row)=>sum+row.numbers[i],0):items[0].numbers[i]);
+  const lo=Math.min(0,...values),hi=Math.max(0,...values),padding=(hi-lo)||1,max=hi+padding*.13,min=lo-padding*.08;
   const y=v=>top+(max-v)/(max-min)*plotH,base=y(0);
-  const tick=[0,.25,.5,.75,1].map(t=>{const value=min+(max-min)*t,yy=y(value);return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e0e8f1"/>${svgText(left-9,yy+5,fmt(value),'text-anchor="end" font-size="12" fill="#50647b"')}`;}).join('');
+  const ticks=[0,.25,.5,.75,1].map(t=>{const value=min+(max-min)*t,yy=y(value);return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e0e8f1"/>${svgText(left-9,yy+5,fmt(value),'text-anchor="end" font-size="12" fill="#50647b"')}`;}).join('');
+  const xs=labels.map((_,i)=>left+plotW*(i+.5)/n);
+  const barWidth=Math.min(95,plotW/n*.65);
   let content='';
-  const xs=[left+plotW*.27,left+plotW*.73];
   if(type==='line'){
-    const points=[[xs[0],y(dataA)],[xs[1],y(dataB)]];
-    content=`<polyline points="${points.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#2763a0" stroke-width="3"/>`+points.map(([x,yy],i)=>`<circle cx="${x}" cy="${yy}" r="6" fill="#2763a0" stroke="white" stroke-width="2"/>${svgText(x,yy-12,fmt(i?dataB:dataA),'text-anchor="middle" font-size="13" font-weight="600" fill="#1d3552"')}`).join('');
-  } else if(type==='stacked'){
+    content=`<polyline points="${xs.map((x,i)=>`${x},${y(values[i])}`).join(' ')}" fill="none" stroke="#2763a0" stroke-width="3"/>`;
+    content+=xs.map((x,i)=>`<circle cx="${x}" cy="${y(values[i])}" r="5" fill="#2763a0"/>${svgText(x,y(values[i])-11,fmt(values[i]),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"')}`).join('');
+  }else if(type==='stacked'){
     const colors=['#346fba','#e29a45','#45a48d','#9b80cf','#d16d77','#7d95ae'];
-    content=xs.map((x,i)=>{let accumulated=0;return items.map((item,j)=>{const v=i?item.b:item.a;const yTop=y(accumulated+v),yBottom=y(accumulated);accumulated+=v;return `<rect x="${x-64}" y="${yTop}" width="128" height="${Math.max(0,yBottom-yTop)}" fill="${colors[j%colors.length]}"><title>${escapeHtml(item.name)} : ${escapeHtml(fmt(v))}</title></rect>`;}).join('')+svgText(x,y(accumulated)-9,fmt(accumulated),'text-anchor="middle" font-size="13" font-weight="600" fill="#1d3552"');}).join('');
-    content+=`<g transform="translate(${left},${height-20})">${items.map((m,i)=>`<rect x="${(i%3)*200}" y="${Math.floor(i/3)*20}" width="10" height="10" fill="${colors[i%colors.length]}"/>${svgText((i%3)*200+16,9+Math.floor(i/3)*20,m.name.slice(0,22),'font-size="11" fill="#394b61"')}`).join('')}</g>`;
-  } else {
-    content=xs.map((x,i)=>{const v=i?dataB:dataA,yy=y(v),rectY=Math.min(yy,base),h=Math.max(1,Math.abs(base-yy));return `<rect x="${x-64}" y="${rectY}" width="128" height="${h}" rx="4" fill="${i?'#42a596':'#346fba'}"/>${svgText(x,v>=0?yy-10:yy+20,fmt(v),'text-anchor="middle" font-size="13" font-weight="600" fill="#1d3552"')}`;}).join('');
+    content=xs.map((x,i)=>{let accumulated=0;const segments=items.map((row,j)=>{const v=row.numbers[i],topY=y(accumulated+v),bottomY=y(accumulated);accumulated+=v;return `<rect x="${x-barWidth/2}" y="${topY}" width="${barWidth}" height="${Math.max(0,bottomY-topY)}" fill="${colors[j%colors.length]}"><title>${escapeHtml(row.name)} : ${escapeHtml(fmt(v))}</title></rect>`;}).join('');return segments+svgText(x,y(accumulated)-9,fmt(accumulated),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"');}).join('');
+    content+=`<g transform="translate(${left},${height-25})">${items.map((m,i)=>`<rect x="${(i%3)*200}" y="${Math.floor(i/3)*18}" width="9" height="9" fill="${colors[i%colors.length]}"/>${svgText((i%3)*200+15,9+Math.floor(i/3)*18,m.name.slice(0,22),'font-size="11" fill="#394b61"')}`).join('')}</g>`;
+  }else{
+    content=xs.map((x,i)=>{const v=values[i],yy=y(v),rectY=Math.min(yy,base),h=Math.max(1,Math.abs(base-yy));return `<rect x="${x-barWidth/2}" y="${rectY}" width="${barWidth}" height="${h}" rx="4" fill="${i%2?'#42a596':'#346fba'}"/>${svgText(x,v>=0?yy-10:yy+20,fmt(v),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"')}`;}).join('');
   }
-  return `<div class="comparison-chart-scroll"><svg class="comparison-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Graphique comparatif des deux périodes">${tick}<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#71839b"/>${content}${xs.map((x,i)=>svgText(x,height-53,labels[i],'text-anchor="middle" font-size="13" fill="#263e59"')).join('')}</svg></div>`;
+  return `<div class="comparison-chart-scroll"><svg class="comparison-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Graphique comparatif des périodes">${ticks}<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#71839b"/>${content}${xs.map((x,i)=>svgText(x,height-69,labels[i],'text-anchor="middle" font-size="12" fill="#263e59"')).join('')}</svg></div>`;
 }
-function renderComparisonChart(leftHtml,rightHtml,leftLabel,rightLabel){
+function renderComparisonChart(series){
   if(!state.comparison.showChart)return '';
-  const {metrics,groups}=comparisonChartData(leftHtml,rightHtml);
-  if(!metrics.length)return '<div class="help">Aucun indicateur numérique comparable pour construire un graphique.</div>';
+  const {metrics,groups}=comparisonChartData(series);
+  if(!metrics.length)return '<div class="help">Aucun indicateur numérique commun à toutes les périodes sélectionnées pour construire un graphique.</div>';
   const type=state.comparison.chartType||'bar';
-  const opts=(type==='stacked'?groups.map(([key,m])=>({key,label:`${m[0].title} (${m.length} composantes)`})):metrics.map(m=>({key:m.key,label:`${m.title} — ${m.name}`})));
-  if(!opts.length)return `<section class="comparison-chart-box"><p class="help">Aucune ventilation compatible avec un graphique empilé. Il faut au moins deux composantes numériques positives de même unité dans un indicateur.</p></section>`;
+  const opts=type==='stacked'?groups.map(([key,items])=>({key,label:`${items[0].title} (${items.length} composantes)`})):metrics.map(m=>({key:m.key,label:`${m.title} — ${m.name}`}));
+  if(!opts.length)return '<section class="comparison-chart-box"><p class="help">Aucune ventilation compatible avec un graphique empilé.</p></section>';
   if(!opts.some(x=>x.key===state.comparison.chartMetric))state.comparison.chartMetric=opts[0].key;
   const selected=state.comparison.chartMetric;
-  const items=type==='stacked'?groups.find(([k])=>k===selected)?.[1]||[]:metrics.filter(x=>x.key===selected);
-  const unit=items[0]?.unit||'';
+  const items=type==='stacked'?(groups.find(([k])=>k===selected)?.[1]||[]):metrics.filter(x=>x.key===selected);
   const title=type==='stacked'?items[0]?.title:`${items[0]?.title} — ${items[0]?.name}`;
-  const optionHtml=opts.map(o=>`<option value="${escapeHtml(o.key)}" ${o.key===selected?'selected':''}>${escapeHtml(o.label)}</option>`).join('');
-  const note=type==='line'?'Deux périodes donnent deux points seulement ; ce graphique ne représente pas une tendance sur plusieurs années.':type==='stacked'?'Les composantes sont additionnées uniquement lorsqu’elles partagent une unité et des valeurs positives. Vérifiez que leur somme a un sens métier.':'';
-  return `<section class="comparison-chart-box"><div class="comparison-chart-fields"><label>Type de graphique<select data-comparison-chart-type><option value="bar" ${type==='bar'?'selected':''}>Barres</option><option value="line" ${type==='line'?'selected':''}>Courbe (2 périodes)</option><option value="stacked" ${type==='stacked'?'selected':''}>Barres empilées</option></select></label><label>Indicateur<select data-comparison-chart-metric>${optionHtml}</select></label></div><h4>${escapeHtml(title)}</h4>${comparisonSvgChart(items,[leftLabel,rightLabel],type)}<p class="help">${escapeHtml(unit?`Unité : ${unit}. `:'')}${escapeHtml(note)}</p></section>`;
+  const select=opts.map(o=>`<option value="${escapeHtml(o.key)}" ${o.key===selected?'selected':''}>${escapeHtml(o.label)}</option>`).join('');
+  const note=type==='stacked'?'Vérifiez que les composantes positives et de même unité peuvent être additionnées.':'';
+  return `<section class="comparison-chart-box"><div class="comparison-chart-fields"><label>Type de graphique<select data-comparison-chart-type><option value="bar" ${type==='bar'?'selected':''}>Barres</option><option value="line" ${type==='line'?'selected':''}>Courbe</option><option value="stacked" ${type==='stacked'?'selected':''}>Barres empilées</option></select></label><label>Indicateur<select data-comparison-chart-metric>${select}</select></label></div><h4>${escapeHtml(title)}</h4>${comparisonSvgChart(items,series.map(p=>p.label),type)}<p class="help">${escapeHtml(note)}</p></section>`;
 }
 function renderIndicatorComparison(q){
   const periods=comparisonPeriods();
   if(periods.length<2||!state.response)return renderIndicatorsSafe(q);
-  const opts=periods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}">${escapeHtml(p.Libelle||p.Periode_Code)}</option>`).join("");
-  if(!state.comparison.left||!periods.some(p=>String(p.Periode_Code)===state.comparison.left))state.comparison.left=String(periods[0].Periode_Code);
-  if(!state.comparison.right||!periods.some(p=>String(p.Periode_Code)===state.comparison.right))state.comparison.right=String(periods.find(p=>String(p.Periode_Code)!==state.comparison.left)?.Periode_Code||periods[0].Periode_Code);
-  const optionSelect=(which,selected)=>`<label class="comparison-period-field">Période ${which==="left"?"1":"2"}<select data-comparison-period="${which}">${opts.replace(`value="${escapeHtml(selected)}"`,`value="${escapeHtml(selected)}" selected`)}</select></label>`;
-  const header=`<div class="period-comparison-header"><button type="button" class="btn btn-small" data-comparison-toggle aria-expanded="${state.comparison.active}">${state.comparison.active?"Fermer la comparaison":"Comparer deux périodes"}</button></div>`;
+  const valid=new Set(periods.map(p=>String(p.Periode_Code)));
+  if(!Array.isArray(state.comparison.selected))state.comparison.selected=[];
+  state.comparison.selected=state.comparison.selected.filter(c=>valid.has(c));
+  if(!state.comparison.selected.length)state.comparison.selected=periods.slice(0,2).map(p=>String(p.Periode_Code));
+  if(!state.comparison.selected.includes(state.comparison.reference))state.comparison.reference=state.comparison.selected[0];
+  const header=`<div class="period-comparison-header"><button type="button" class="btn btn-small" data-comparison-toggle aria-expanded="${state.comparison.active}">${state.comparison.active?'Fermer la comparaison':'Comparer les périodes'}</button></div>`;
   if(!state.comparison.active)return header+renderIndicatorsSafe(q);
-  const left=state.comparison.left,right=state.comparison.right;
-  const warn=left===right?'<div class="help" role="alert">Sélectionnez deux périodes différentes pour les comparer.</div>':"";
-  let comparisonTable="",details="",chart="";
-  if(left!==right){
-    const leftHtml=renderIndicators(q,left,true),rightHtml=renderIndicators(q,right,true);
-    const leftLabel=periods.find(p=>String(p.Periode_Code)===left)?.Libelle||left;
-    const rightLabel=periods.find(p=>String(p.Periode_Code)===right)?.Libelle||right;
-    comparisonTable=renderComparisonTable(leftHtml,rightHtml,state.comparison,leftLabel,rightLabel);
-    chart=renderComparisonChart(leftHtml,rightHtml,leftLabel,rightLabel);
-    // Les graphiques, ventilations et indicateurs non numériques existants ne sont pas perdus.
-    details=`<details class="comparison-details"><summary>Voir les graphiques et indicateurs détaillés</summary><div class="period-comparison-columns"><div class="period-comparison-column"><h4>${escapeHtml(leftLabel)}</h4>${leftHtml}</div><div class="period-comparison-column"><h4>${escapeHtml(rightLabel)}</h4>${rightHtml}</div></div></details>`;
+  const selectedPeriods=periods.filter(p=>state.comparison.selected.includes(String(p.Periode_Code)));
+  const selectors=periods.map(p=>`<label class="comparison-period-choice"><input type="checkbox" data-comparison-select="${escapeHtml(p.Periode_Code)}" ${state.comparison.selected.includes(String(p.Periode_Code))?'checked':''}><span>${escapeHtml(p.Libelle||p.Periode_Code)}</span></label>`).join('');
+  const referenceSelect=selectedPeriods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}" ${String(p.Periode_Code)===state.comparison.reference?'selected':''}>${escapeHtml(p.Libelle||p.Periode_Code)}</option>`).join('');
+  const referenceControl=state.comparison.showDiff||state.comparison.showPercent?`<label class="comparison-reference-field">Période de référence<select data-comparison-reference>${referenceSelect}</select></label>`:'';
+  const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?'checked':''}><span>${label}</span></label>`;
+  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?'open':''}><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle('showDiff','Afficher les écarts absolus',state.comparison.showDiff)}${toggle('showPercent','Afficher les évolutions en %',state.comparison.showPercent)}${toggle('showTrend','Afficher les flèches de hausse ou de baisse',state.comparison.showTrend)}${toggle('showChart','Afficher un graphique comparatif',state.comparison.showChart)}</div>${referenceControl}<p class="help">Les options d’écarts sont facultatives. Chaque période est comparée à la référence choisie, sans modifier les réponses.</p></details>`;
+  let table='',chart='',details='';
+  if(selectedPeriods.length>=2){
+    const series=comparisonSeries(q,selectedPeriods);
+    table=renderComparisonTable(series,state.comparison,state.comparison.reference);
+    chart=renderComparisonChart(series);
+    details=`<details class="comparison-details"><summary>Voir les graphiques et indicateurs détaillés</summary><div class="period-comparison-columns">${series.map(p=>`<div class="period-comparison-column"><h4>${escapeHtml(p.label)}</h4>${p.html}</div>`).join('')}</div></details>`;
   }
-  const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?"checked":""}><span>${label}</span></label>`;
-  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?"open":""}><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle("showDiff","Afficher les écarts absolus",state.comparison.showDiff)}${toggle("showPercent","Afficher les évolutions en %",state.comparison.showPercent)}${toggle("showTrend","Afficher les flèches de hausse ou de baisse",state.comparison.showTrend)}${toggle("showChart","Afficher un graphique comparatif",state.comparison.showChart)}</div><p class="help">Les options n’affectent pas les données enregistrées. Les écarts s’appliquent aux indicateurs numériques comparables.</p></details>`;
-  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Comparaison des données de votre réponse uniquement, pour les deux périodes choisies.</p><div class="period-comparison-controls">${optionSelect("left",left)}${optionSelect("right",right)}</div>${options}${warn}${comparisonTable}${chart}${details}</section>`;
+  const warn=selectedPeriods.length<2?'<p class="help" role="alert">Sélectionnez au moins deux périodes pour afficher la comparaison.</p>':'';
+  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Choisissez au moins deux périodes. Les calculs concernent uniquement votre propre réponse.</p><div class="comparison-period-choices">${selectors}</div>${options}${warn}${table}${chart}${details}</section>`;
 }
 function personalizedDescriptionText(q,answers){const fallback=first(q,["Aide","Description","Texte_aide"],"");if(!isTrue(q.MP_Actif))return fallback;const rules=(()=>{try{const x=JSON.parse(q.MP_Regles||"[]");return Array.isArray(x)?x:[]}catch{return []}})(),source=String(q.MP_Question_Source||""),srcQ=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===source);let value=source?answers?.[source]:"";if((value===""||value==null)&&srcQ&&campaignLocksQuestion(srcQ)){const p=campaignPersonalization();if(p&&String(p.questionCode)===source)value=p.value}value=String(codeOf(value)||value||"");let hit=rules.find(r=>String(r.value)===value);if(!hit&&isTrue(q.MP_Heritage_Descendants)&&value&&srcQ){hit=rules.find(r=>hierarchyMatchSet(String(r.value),"value_descendants",srcQ).has(value))}return String(hit?.text??q.MP_Texte_Defaut??fallback??"")}
 
@@ -1571,9 +1595,17 @@ function render() {
   root.querySelectorAll("[data-comparison-toggle]").forEach(el=>el.addEventListener("click",()=>{
     state.comparison.active=!state.comparison.active;render();
   }));
-  root.querySelectorAll("[data-comparison-period]").forEach(el=>el.addEventListener("change",e=>{
-    state.comparison[e.currentTarget.dataset.comparisonPeriod]=e.currentTarget.value;render();
+  root.querySelectorAll("[data-comparison-select]").forEach(el=>el.addEventListener("change",e=>{
+    const code=e.currentTarget.dataset.comparisonSelect;
+    const selected=new Set(state.comparison.selected||[]);
+    if(e.currentTarget.checked)selected.add(code);else selected.delete(code);
+    state.comparison.selected=[...selected];
+    if(!selected.has(state.comparison.reference))state.comparison.reference=state.comparison.selected[0]||"";
+    render();
   }));
+  root.querySelector("[data-comparison-reference]")?.addEventListener("change",e=>{
+    state.comparison.reference=e.currentTarget.value;state.comparison.optionsOpen=true;render();
+  });
   root.querySelectorAll(".comparison-options").forEach(el=>el.addEventListener("toggle",()=>{
     state.comparison.optionsOpen=el.open;
   }));

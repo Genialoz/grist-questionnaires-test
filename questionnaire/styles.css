@@ -245,3 +245,10 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 .comparison-chart-scroll{overflow-x:auto}
 .comparison-chart-svg{display:block;width:100%;min-width:490px;height:auto;max-height:350px}
 @media(max-width:650px){.comparison-chart-fields{grid-template-columns:1fr}}
+
+/* V3.9 — sélecteur de périodes multiples et période de référence */
+.comparison-period-choices{display:flex;flex-wrap:wrap;gap:8px 14px;margin:12px 0;padding:12px;background:#f6f8fc;border:1px solid #dce4f0;border-radius:9px}
+.comparison-period-choice{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-weight:550}
+.comparison-period-choice input[type="checkbox"]{width:16px!important;height:16px!important;flex:0 0 16px;margin:0!important}
+.comparison-reference-field{display:flex;flex-direction:column;gap:5px;max-width:330px;margin:10px 0;font-weight:600}
+.comparison-reference-field select{padding:8px;border:1px solid #b9c7dd;border-radius:7px;background:#fff}
