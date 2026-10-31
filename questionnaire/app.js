@@ -954,16 +954,48 @@ function comparisonParseNumber(text){
 function comparisonKpis(html){
   const tmp=document.createElement("div");tmp.innerHTML=html;
   const found=new Map();
+  const add=(title,name,text)=>{
+    const metric=comparisonParseNumber(text);
+    if(!title||!name||!metric)return;
+    found.set(`${title} ${name}`,{title,name,...metric});
+  };
   tmp.querySelectorAll(".indicator-card").forEach(card=>{
     const title=card.querySelector("h4")?.textContent?.trim()||"";
+    // Les KPI simples conservent leur fonctionnement historique.
     card.querySelectorAll("small").forEach(label=>{
-      // La disposition KPI du questionnaire est <small>libellé</small><div>valeur</div>.
       const valueEl=label.nextElementSibling;
-      if(!title||!valueEl||valueEl.tagName!=="DIV")return;
-      const metric=comparisonParseNumber(valueEl.textContent);
-      if(!metric)return;
-      const name=label.textContent.trim();
-      if(name)found.set(`${title}\u0000${name}`,{title,name,...metric});
+      if(valueEl?.tagName==="DIV")add(title,label.textContent.trim(),valueEl.textContent);
+    });
+    // Un regroupement produit un tableau : les colonnes peuvent être des
+    // effectifs, sommes, moyennes... Les clés incluent la modalité ET la mesure.
+    // Une catégorie absente n'est pas convertie artificiellement en zéro.
+    card.querySelectorAll("table").forEach(table=>{
+      const heads=[...table.querySelectorAll("thead tr:last-child th,thead tr:last-child td")]
+        .map(cell=>cell.textContent.trim());
+      if(heads.length<2)return;
+      table.querySelectorAll("tbody tr").forEach(tr=>{
+        const cells=[...tr.children].filter(el=>/^(TH|TD)$/.test(el.tagName));
+        if(cells.length!==heads.length)return;
+        const group=cells[0].textContent.trim();
+        if(!group)return;
+        for(let i=1;i<cells.length;i++){
+          const measure=heads[i]||`Mesure ${i}`;
+          add(title,`${group} — ${measure}`,cells[i].textContent);
+        }
+      });
+    });
+    // Ventilations catégorielles sans tableau HTML : chaque modalité est
+    // affichée comme « Modalité : <strong>effectif</strong> (xx %) ».
+    // On ne lit que les lignes directes du bloc, jamais les libellés du graphe.
+    card.querySelectorAll(":scope > div:not(.indicator-chart)").forEach(block=>{
+      if(block.querySelector("table"))return;
+      [...block.children].forEach(line=>{
+        if(line.children.length>1||line.children[0]?.tagName!=="STRONG")return;
+        const strong=line.children[0];
+        const before=[...line.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(" ");
+        const label=before.replace(/\s*:\s*$/,'').trim();
+        if(label&&label.toLowerCase()!=="total")add(title,`${label} — Effectif`,strong.textContent);
+      });
     });
   });
   return found;
