@@ -1049,7 +1049,36 @@ function renderComparisonTable(series,options,reference){
   const others=series.map((p,index)=>({p,index})).filter(x=>x.index!==referenceIndex);
   const extraHead=others.map(({p})=>`${options.showDiff?`<th scope="col">Écart vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}${options.showPercent?`<th scope="col">Évolution vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}`).join('');
   const header=`<thead><tr><th scope="col">Indicateur</th>${series.map(p=>`<th scope="col">${escapeHtml(p.label)}</th>`).join('')}${extraHead}</tr></thead>`;
-  const body=rows.map(row=>{
+  // La clé métier complète reste inchangée, mais l'affichage ne répète pas
+  // « Événements — par Structure détaillée » sur chaque modalité.
+  const displayInfo=row=>{
+    const title=String(row.title||'');
+    const name=String(row.name||'');
+    const cut=name.lastIndexOf(' — ');
+    if(cut>=0&&title.includes(' — par '))return {
+      group:name.slice(cut+3).trim(),
+      modality:name.slice(0,cut).trim(),
+      ventilated:true
+    };
+    return {group:title,modality:name,ventilated:false};
+  };
+  const groupLabels=new Map();
+  for(const row of rows){
+    const d=displayInfo(row);
+    if(!groupLabels.has(d.group))groupLabels.set(d.group,new Set());
+    groupLabels.get(d.group).add(row.title);
+  }
+  const body=rows.map((row,rowIndex)=>{
+    const d=displayInfo(row);
+    const previous=rowIndex?displayInfo(rows[rowIndex-1]):null;
+    // Si deux indicateurs distincts portent le même nom de mesure,
+    // on précise leur origine pour éviter toute ambiguïté.
+    const sectionLabel=groupLabels.get(d.group).size>1
+      ?`${d.group} (${row.title})`:d.group;
+    const previousLabel=previous&&(groupLabels.get(previous.group).size>1
+      ?`${previous.group} (${rows[rowIndex-1].title})`:previous.group);
+    const section=sectionLabel!==previousLabel
+      ?`<tr class="comparison-measure-heading"><th colspan="${1+series.length+others.length*(Number(Boolean(options.showDiff))+Number(Boolean(options.showPercent)))}" scope="colgroup" style="text-align:left;background:#eef3fa;padding:9px 12px;font-weight:700">${escapeHtml(sectionLabel)}</th></tr>`:'';
     const base=row.values[referenceIndex];
     const cell=row.values.map(v=>`<td>${escapeHtml(comparisonFormatValue(v))}</td>`).join('');
     const extras=others.map(({index})=>{
@@ -1063,7 +1092,7 @@ function renderComparisonTable(series,options,reference){
       const percent=options.showPercent?`<td>${ratio===null?'Non calculable':`${!options.showDiff?icon:''}${escapeHtml(comparisonFormatNumber(ratio,''))} %`}</td>`:'';
       return diff+percent;
     }).join('');
-    return `<tr${row.isTotal?' class="comparison-total-highlight"':''}><th scope="row">${escapeHtml(row.title+' — '+row.name)}</th>${cell}${extras}</tr>`;
+    return `${section}<tr${row.isTotal?' class="comparison-total-highlight"':''}><th scope="row">${escapeHtml(d.modality)}</th>${cell}${extras}</tr>`;
   }).join('');
   const note=options.showDiff||options.showPercent?'<p class="help">Chaque écart compare la période indiquée à la référence choisie. Pour les indicateurs en %, les écarts sont en points ; une valeur de référence nulle rend l’évolution relative non calculable.</p>':'';
   return `<section class="comparison-changes"><div class="comparison-table-scroll"><table>${header}<tbody>${body}</tbody></table></div>${note}</section>`;
