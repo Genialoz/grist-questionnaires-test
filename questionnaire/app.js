@@ -10,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { periodConfig:null, selectedPeriod:"", archiveCopyTarget:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -1241,7 +1241,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const showTools=list.length>=type.filterThreshold || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def,list);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{},targetState.fiches),card=ficheCardText(type,def,fiche,index),locked=readOnly||fiche.readOnlyImport||!periodEditable(periods,fiche.periodeCode);const periodBadge=periods?.enabled?`<span class="fiche-period-badge">${escapeHtml(periodLabel(periods,fiche.periodeCode))}</span>`:"";return `<article class="fiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> ${periodBadge}<span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${locked?` <span class="import-readonly-badge">Lecture seule</span>`:""}</div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked && periodCanChangeStructure(periods,fiche.periodeCode) && canAddFiche(type,shownList)?`<button type="button" class="btn btn-small" data-duplicate-fiche="${escapeHtml(type.code)}" data-index="${index}">Dupliquer</button>`:""}${periods?.enabled && !fiche.readOnlyImport && !!fiche.periodeCode && (periods.selectable||[]).length && !periodCanChangeStructure(periods,fiche.periodeCode) && type.allowAdd ? `<button type="button" class="btn btn-small" data-copy-archive-fiche="${escapeHtml(type.code)}" data-index="${index}">Reprendre dans une période ouverte</button>` : ""}${!locked && periodCanChangeStructure(periods,fiche.periodeCode) && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{},targetState.fiches),card=ficheCardText(type,def,fiche,index),locked=readOnly||fiche.readOnlyImport||!periodEditable(periods,fiche.periodeCode);const periodBadge=periods?.enabled?`<span class="fiche-period-badge">${escapeHtml(periodLabel(periods,fiche.periodeCode))}</span>`:"";return `<article class="fiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> ${periodBadge}<span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${locked?` <span class="import-readonly-badge">Lecture seule</span>`:""}</div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked && periodCanChangeStructure(periods,fiche.periodeCode) && canAddFiche(type,shownList)?`<button type="button" class="btn btn-small" data-duplicate-fiche="${escapeHtml(type.code)}" data-index="${index}">Dupliquer</button>`:""}${periods?.enabled && !fiche.readOnlyImport && !!fiche.periodeCode && (periods.selectable||[]).length && !periodCanChangeStructure(periods,fiche.periodeCode) && type.allowAdd ? `<button type="button" class="btn btn-small" data-copy-archive-fiche="${escapeHtml(type.code)}" data-index="${index}">Reprendre cette fiche</button>` : ""}${!locked && periodCanChangeStructure(periods,fiche.periodeCode) && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const empty=shownList.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
   const editedFiche=editor&&editor.index!==null?list[editor.index]:null,editorReadOnly=readOnly||Boolean(editedFiche?.readOnlyImport)||(!!editedFiche&&!periodEditable(periods,editedFiche.periodeCode));
   const editorHtml=editor ? `<div class="fiche-editor${editorReadOnly?" imported-readonly-card":""}" data-fiche-editor="${escapeHtml(type.code)}"><h3>${editorReadOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers,editorReadOnly||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...(targetState.answers??{}),...editor.answers})).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],editorReadOnly) : pendingSubFiches(type)}${editorReadOnly?`<div class="import-readonly-note">Fiche en lecture seule</div>`:`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${editorReadOnly?"Fermer":"Annuler"}</button>${editorReadOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
@@ -1519,7 +1519,6 @@ function render() {
   }));
   root.querySelectorAll("[data-duplicate-fiche]").forEach(el=>el.addEventListener("click",e=>duplicateRespondentFiche(e.currentTarget.dataset.duplicateFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-copy-archive-fiche]").forEach(el=>el.addEventListener("click",e=>copyArchivedFicheToPeriod(e.currentTarget.dataset.copyArchiveFiche,Number(e.currentTarget.dataset.index))));
-  root.querySelectorAll("[data-archive-copy-target]").forEach(el=>{el.value=state.archiveCopyTarget||"";el.addEventListener("change",e=>{state.archiveCopyTarget=e.currentTarget.value;});});
   root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
   root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
@@ -2203,13 +2202,78 @@ async function duplicateRespondentFiche(typeCode,index,parentElementId=null){
   state.saving=false;showActionSuccess("Fiche dupliquée — vérifiez et modifiez la copie");render();scrollToEditor(isSub?"[data-subfiche-editor]":"[data-fiche-editor]");
  }catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();}
 }
+
+// Fenêtres de reprise indépendantes du rendu du questionnaire : pas de destination oubliée.
+function archiveCopyDialog(title,body,buttons){
+ return new Promise(resolve=>{
+  const overlay=document.createElement("div");
+  overlay.setAttribute("role","presentation");
+  overlay.style.cssText="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.60);display:flex;justify-content:center;align-items:center;padding:16px";
+  const panel=document.createElement("section");
+  panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","true");panel.setAttribute("aria-label",title);
+  panel.style.cssText="background:#fff;color:#172033;border-radius:14px;padding:24px;width:min(100%,480px);max-height:90vh;overflow:auto;box-shadow:0 18px 55px #0005";
+  const h=document.createElement("h3");h.textContent=title;h.style.cssText="margin:0 0 16px;font-size:1.2rem";panel.append(h);
+  body(panel);
+  const actions=document.createElement("div");actions.style.cssText="display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px";
+  const previousFocus=document.activeElement;
+  const finish=value=>{document.removeEventListener("keydown",keyHandler,true);overlay.remove();previousFocus?.focus?.();resolve(value);};
+  const keyHandler=e=>{if(e.key==="Escape"){e.preventDefault();finish(null);}else if(e.key==="Tab"){const controls=[...panel.querySelectorAll("button,select")].filter(x=>!x.disabled);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};
+  document.addEventListener("keydown",keyHandler,true);
+  overlay.addEventListener("click",e=>{if(e.target===overlay)finish(null);});
+  buttons(actions,finish);panel.append(actions);overlay.append(panel);document.body.append(overlay);
+  (panel.querySelector("select")||panel.querySelector("button"))?.focus();
+ });
+}
+function archiveCopyButton(label,primary,fn){
+ const b=document.createElement("button");b.type="button";b.textContent=label;
+ b.className=primary?"btn btn-primary":"btn";
+ b.addEventListener("click",fn);return b;
+}
+function chooseArchiveCopyTarget(destinations,ficheTitle,sourcePeriod){
+ return archiveCopyDialog("Reprendre une fiche",panel=>{
+  const info=document.createElement("p");info.textContent=`Fiche : ${ficheTitle}`;panel.append(info);
+  const source=document.createElement("p");source.textContent=`Période d'origine : ${sourcePeriod}`;panel.append(source);
+  const label=document.createElement("label");label.textContent="Période de destination";label.style.cssText="display:block;font-weight:600;margin-top:18px;margin-bottom:6px";
+  const select=document.createElement("select");select.dataset.archiveDestination="";select.style.cssText="display:block;width:100%;min-height:40px;padding:8px;border:1px solid #adb5bd;border-radius:6px";
+  if(destinations.length!==1){const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="Choisir une période…";select.append(placeholder);}
+  destinations.forEach(p=>{const opt=document.createElement("option");opt.value=p.Periode_Code;opt.textContent=p.Libelle||p.Periode_Code;select.append(opt);});
+  label.append(select);panel.append(label);
+  const subLabel=document.createElement("label");subLabel.style.cssText="display:flex;gap:8px;align-items:center;margin-top:16px";
+  const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=true;checkbox.dataset.archiveCopyChildren="";
+  subLabel.append(checkbox,document.createTextNode("Copier également les sous-fiches associées"));panel.append(subLabel);
+  const note=document.createElement("p");note.textContent="L'original restera dans les archives.";note.style.cssText="font-size:.9rem;color:#526070;margin-top:12px";panel.append(note);
+ },(actions,finish)=>{
+  actions.append(archiveCopyButton("Annuler",false,()=>finish(null)));
+  const confirm=archiveCopyButton("Reprendre la fiche",true,()=>{const value=document.querySelector("[data-archive-destination]")?.value;if(value)finish({destination:value,copyChildren:document.querySelector("[data-archive-copy-children]")?.checked!==false});});
+  actions.append(confirm);
+  const select=document.querySelector("[data-archive-destination]");
+  // Le formulaire est encore détaché du DOM ici : mise à jour après insertion.
+  queueMicrotask(()=>{const input=document.querySelector("[data-archive-destination]");if(input){confirm.disabled=!input.value;input.addEventListener("change",()=>{confirm.disabled=!input.value;});}});
+ });
+}
+function showArchiveCopySuccess(destinationLabel){
+ return archiveCopyDialog("Fiche reprise avec succès",panel=>{
+  const p=document.createElement("p");p.textContent=`La fiche a été copiée dans « ${destinationLabel} ». La fiche originale est conservée dans les archives.`;panel.append(p);
+ },(actions,finish)=>{
+  actions.append(archiveCopyButton("Continuer dans les archives",false,()=>finish(false)));
+  actions.append(archiveCopyButton("Voir la fiche copiée",true,()=>finish(true)));
+ });
+}
+
 // Reprise explicite d'une ancienne fiche vers une période ouverte : jamais de modification de la source.
 // Copie les réponses et les sous-fiches directes, via les mêmes actions sécurisées que l'ajout ordinaire.
 async function copyArchivedFicheToPeriod(typeCode,index){
  if(state.saving||state.ficheEditor||state.subFicheEditor||state.principalDirty){showSaveError(new Error("Enregistrez ou annulez les modifications en cours avant la reprise."));return;}
- const destination=state.archiveCopyTarget||document.querySelector("[data-archive-copy-target]")?.value||"";
- const target=state.periodConfig?.selectable?.find(p=>String(p.Periode_Code)===String(destination));
- if(!target||!periodCanChangeStructure(state.periodConfig,destination)){showSaveError(new Error("Sélectionnez une période de destination ouverte et accessible à la saisie."));return;}
+ const destinations=(state.periodConfig?.selectable||[]).filter(p=>periodCanChangeStructure(state.periodConfig,p.Periode_Code));
+ if(!destinations.length){showSaveError(new Error("Aucune période ouverte n'est disponible pour reprendre cette fiche."));return;}
+ const sourceFiche=state.fiches[typeCode]?.[index];
+ const sourceType=findRepeatableType(buildViewModel(state.definition,state.answers).pages[state.pageIndex]?.repeatableTypes??[],typeCode);
+ const sourceCard=sourceFiche&&sourceType?ficheCardText(sourceType,state.definition,sourceFiche,index):null;
+ const request=await chooseArchiveCopyTarget(destinations,sourceCard?.title||"Fiche",periodLabel(state.periodConfig,sourceFiche?.periodeCode));
+ if(!request)return;
+ const destination=request.destination;
+ const target=destinations.find(p=>String(p.Periode_Code)===String(destination));
+ if(!target||!periodCanChangeStructure(state.periodConfig,destination)){showSaveError(new Error("La période de destination n'est plus accessible à la saisie."));return;}
  const vm=buildViewModel(state.definition,state.answers);
  const type=findRepeatableType(vm.pages[state.pageIndex]?.repeatableTypes??[],typeCode);
  const source=state.fiches[typeCode]?.[index];
@@ -2222,8 +2286,8 @@ async function copyArchivedFicheToPeriod(typeCode,index){
  const children=collectChildren(type,source.elementId);
  const descendants=nodes=>nodes.flatMap(n=>[n,...descendants(n.children)]);
  const allChildren=descendants(children);
- if(allChildren.some(c=>!c.type.allowAdd||c.source.readOnlyImport)){showSaveError(new Error("Certaines sous-fiches ne peuvent pas être recopiées automatiquement."));return;}
- if(!window.confirm(`Reprendre cette fiche et ses ${allChildren.length} sous-fiche(s) dans « ${target.Libelle||destination} » ?\nLa fiche originale restera inchangée.`))return;
+ const childrenToCopy=request.copyChildren?children:[];
+ if(request.copyChildren && allChildren.some(c=>!c.type.allowAdd||c.source.readOnlyImport)){showSaveError(new Error("Certaines sous-fiches ne peuvent pas être recopiées automatiquement."));return;}
  if(state.previewMode){showSaveError(new Error("La reprise entre périodes doit être testée depuis une campagne TEST, et non depuis l'aperçu."));return;}
  try{
   assertResponseEditable();state.saving=true;beginActionFeedback("Reprise de la fiche…");render();
@@ -2240,8 +2304,18 @@ async function copyArchivedFicheToPeriod(typeCode,index){
     await saveChildren(child.children,createdChild.elementId);
    }
   };
-  await saveChildren(children,created.elementId);
+  await saveChildren(childrenToCopy,created.elementId);
   state.saving=false;showActionSuccess(`Fiche reprise dans « ${target.Libelle||destination} » : l'originale est conservée.`,6000);render();
+  const seeCopy=await showArchiveCopySuccess(target.Libelle||destination);
+  if(seeCopy){
+   state.selectedPeriod=destination;
+   loadPrincipalForSelectedPeriod();
+   state.ficheListUi={};
+   state.pageHistory=[];
+   state.ficheEditor=null;
+   state.subFicheEditor=null;
+   render();
+  }
  }catch(e){state.saving=false;clearActionFeedback();showSaveError(new Error(`${e.message||e} Vérifiez les nouvelles fiches dans la période de destination avant de recommencer : une copie partielle peut avoir été créée.`));render();}
 }
 async function cancelCurrentFiche(typeCode,index){if(state.previewMode){deleteFiche(state,typeCode,index);render();return;}assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;if(fiche.readOnlyImport||!periodCanChangeStructure(state.periodConfig,fiche.periodeCode)){showSaveError(new Error("Cette fiche est en lecture seule et ne peut pas être supprimée."));render();return;}try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
