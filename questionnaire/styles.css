@@ -235,3 +235,13 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 .comparison-details{margin-top:16px;padding:12px;border:1px solid #dce4f0;border-radius:10px;background:#fff}
 .comparison-details summary{cursor:pointer;font-weight:650;color:#253c65;margin-bottom:8px}
 .comparison-details:not([open]) summary{margin-bottom:0}
+
+/* V3.8.3 : graphiques comparatifs optionnels */
+.comparison-chart-box{background:#fff;border:1px solid #dce4f0;border-radius:10px;padding:14px;margin:16px 0}
+.comparison-chart-box h4{font-size:1rem;margin:14px 0 8px;color:#263e59}
+.comparison-chart-fields{display:grid;grid-template-columns:1fr 1.5fr;gap:12px}
+.comparison-chart-fields label{display:flex;flex-direction:column;gap:6px;font-weight:600;min-width:0}
+.comparison-chart-fields select{width:100%;max-width:100%;padding:8px;border:1px solid #b9c7dd;border-radius:7px;background:white}
+.comparison-chart-scroll{overflow-x:auto}
+.comparison-chart-svg{display:block;width:100%;min-width:490px;height:auto;max-height:350px}
+@media(max-width:650px){.comparison-chart-fields{grid-template-columns:1fr}}
