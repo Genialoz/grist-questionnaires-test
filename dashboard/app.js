@@ -154,11 +154,14 @@ function comparisonExtractMetrics(fragment){
 function comparisonPresentation(key,label){
  const pieces=String(label||'').split(' — ').map(x=>x.trim()).filter(Boolean);
  const primary=pieces.shift()||'Indicateur';
- const title=primary.split(' › ').pop().replace(/\s*\([^()]*\)\s*$/,'').trim()||primary;
+ // Le chemin page › section sert à distinguer les sources dans les sélecteurs,
+ // mais il n'a pas à apparaître dans le tableau comparatif.
+ const withoutPath=value=>String(value||'').split(/\s*›\s*/).pop().trim();
+ const title=withoutPath(primary).replace(/\s*\([^()]*\)\s*$/,'').trim()||withoutPath(primary);
  const statisticNames=new Set(['Moyenne','Somme','Nombre','Minimum','Maximum','Médiane','Total','Nombre total','Valeurs renseignées','Valeurs distinctes','Total des sélections','Sélections moyennes','Moyenne par répondant','Répondants avec au moins une fiche']);
  let statistic='';
  if(pieces.length&&statisticNames.has(pieces[pieces.length-1]))statistic=pieces.pop();
- const useful=pieces.filter(x=>!/^Ventilation par\b/i.test(x)&&x!=='Global');
+ const useful=pieces.filter(x=>!/^Ventilation par\b/i.test(x)&&x!=='Global').map(withoutPath);
  let rowLabel=useful.join(' — ');
  if(!rowLabel){const tail=String(key).split('/');if(tail.includes('modalite'))rowLabel=tail[tail.length-1];else if(tail.includes('kpi'))rowLabel='Global';else rowLabel='Ensemble';}
  return {title,rowLabel,statistic};
