@@ -152,16 +152,21 @@ function comparisonExtractMetrics(fragment){
 // Présentation des comparaisons : séparer question, modalité et statistique.
 // Les identifiants techniques des métriques restent inchangés pour la correspondance entre périodes.
 function comparisonPresentation(key,label){
- const pieces=String(label||'').split(' — ').map(x=>x.trim()).filter(Boolean);
- const primary=pieces.shift()||'Indicateur';
- // Le chemin page › section sert à distinguer les sources dans les sélecteurs,
- // mais il n'a pas à apparaître dans le tableau comparatif.
+ const parts=String(label||'').split(' — ').map(x=>x.trim()).filter(Boolean);
  const withoutPath=value=>String(value||'').split(/\s*›\s*/).pop().trim();
- const title=withoutPath(primary).replace(/\s*\([^()]*\)\s*$/,'').trim()||withoutPath(primary);
+ const withoutCode=value=>withoutPath(value).replace(/\s*\([^()]*\)\s*$/,'').trim();
  const statisticNames=new Set(['Moyenne','Somme','Nombre','Minimum','Maximum','Médiane','Total','Nombre total','Valeurs renseignées','Valeurs distinctes','Total des sélections','Sélections moyennes','Moyenne par répondant','Répondants avec au moins une fiche']);
  let statistic='';
- if(pieces.length&&statisticNames.has(pieces[pieces.length-1]))statistic=pieces.pop();
- const useful=pieces.filter(x=>!/^Ventilation par\b/i.test(x)&&x!=='Global').map(withoutPath);
+ if(parts.length&&statisticNames.has(parts[parts.length-1]))statistic=parts.pop();
+ // Le titre de question est affiché UNE fois, dans l'en-tête de groupe.
+ // Les intitulés des blocs peuvent répéter le chemin de la question : les écarter des lignes.
+ const ventilationAt=parts.findIndex(x=>/^Ventilation par\b/i.test(x));
+ const pre=ventilationAt>=0?parts.slice(0,ventilationAt):parts.slice(0,1);
+ const question=pre.findLast?.(x=>/\s›\s/.test(x)||/\([^()]+\)\s*$/.test(x))||pre[0]||'Indicateur';
+ const title=withoutCode(question)||'Indicateur';
+ const candidateParts=ventilationAt>=0?parts.slice(ventilationAt+1):parts.slice(1);
+ const useful=candidateParts.filter(x=>x!=='Global'&&!/^Ventilation par\b/i.test(x))
+  .map(withoutPath).filter(x=>x&&withoutCode(x)!==title);
  let rowLabel=useful.join(' — ');
  if(!rowLabel){const tail=String(key).split('/');if(tail.includes('modalite'))rowLabel=tail[tail.length-1];else if(tail.includes('kpi'))rowLabel='Global';else rowLabel='Ensemble';}
  return {title,rowLabel,statistic};
