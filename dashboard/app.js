@@ -89,20 +89,86 @@ function comparisonHydrated(code){
  return {responses,hydrated};
 }
 function comparisonPeriodName(code){const p=state.periods.find(x=>codeOf(x.Periode_Code)===code);return String(p?.Libelle||code)}
-function comparisonNumeric(raw){const str=String(raw||'').trim().replace(/[\s\u00a0\u202f]/g,'').replace('%','').replace(',','.');if(!str||!/^[-+]?\d+(?:\.\d+)?$/.test(str))return null;const n=Number(str);return Number.isFinite(n)?n:null}
+function comparisonNumeric(raw){const str=String(raw??'').trim().replace(/[\s\u00a0\u202f]/g,'').replace('%','').replace(',','.');if(!str||!/^[-+]?\d+(?:\.\d+)?$/.test(str))return null;const n=Number(str);return Number.isFinite(n)?n:null}
 function comparisonFormat(n){return Number.isFinite(n)?n.toLocaleString('fr-FR',{maximumFractionDigits:2}):'—'}
-function comparisonRender(){
- const codes=state.compareCodes.filter(code=>state.periods.some(p=>codeOf(p.Periode_Code)===code));if(codes.length<2)return '<div class="status-info">Sélectionnez au moins deux périodes pour lancer la comparaison.</div>';
- const previous={responses:state.responses,hydrated:state.hydrated,periodCode:state.periodCode};const samples=[];
- try{for(const code of codes){const data=comparisonHydrated(code);state.responses=data.responses;state.hydrated=data.hydrated;state.periodCode=code;const html=renderGlobal();const fragment=document.createElement('div');fragment.innerHTML=html;const metrics=new Map();fragment.querySelectorAll('.dash-kpi,.indicator-card,.indicator-part').forEach((card,i)=>{const heading=card.querySelector('h3,h4,span')?.textContent?.trim()||`Indicateur ${i+1}`;card.querySelectorAll('.dash-kpi').forEach((k,j)=>{const name=k.querySelector('span')?.textContent?.trim(),value=comparisonNumeric(k.querySelector('strong')?.textContent);if(name&&value!==null)metrics.set(`${heading} — ${name}`,value)});if(card.classList.contains('dash-kpi')){const name=card.querySelector('span')?.textContent?.trim(),value=comparisonNumeric(card.querySelector('strong')?.textContent);if(name&&value!==null)metrics.set(name,value)}});
- // Les indicateurs en tableaux restent consultables dans le détail de chaque période.
- samples.push({code,label:comparisonPeriodName(code),count:data.responses.length,html,metrics});}}
- finally{state.responses=previous.responses;state.hydrated=previous.hydrated;state.periodCode=previous.periodCode;}
- const ref=samples.find(x=>x.code===state.compareReference)||samples[0];const names=[...new Set(samples.flatMap(x=>[...x.metrics.keys()]))];
- const rows=names.map(name=>{const refValue=ref.metrics.get(name);return `<tr><th>${escapeHtml(name)}</th>${samples.map(x=>`<td>${x.metrics.has(name)?comparisonFormat(x.metrics.get(name)):'—'}</td>`).join('')}${samples.map(x=>{const v=x.metrics.get(name);return `<td>${v!==undefined&&refValue!==undefined?comparisonFormat(v-refValue):'—'}</td>`}).join('')}</tr>`}).join('');
- const table=names.length?`<div class="dash-table-wrap"><table class="dash-table"><thead><tr><th>Indicateur</th>${samples.map(x=>`<th>${escapeHtml(x.label)}</th>`).join('')}${samples.map(x=>`<th>Écart ${escapeHtml(x.label)} / ${escapeHtml(ref.label)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="help">Aucun indicateur numérique simple à comparer automatiquement. Les résultats détaillés restent consultables ci-dessous.</div>';
- return `<section class="dashboard-comparison-results"><h2>Comparaison multi-périodes</h2><p class="help">Référence : ${escapeHtml(ref.label)}. Écarts en valeur absolue. Les blocs détaillés sont présentés séparément pour éviter de mélanger les données.</p>${table}<div class="dashboard-comparison-panels">${samples.map(x=>`<details><summary>${escapeHtml(x.label)} — ${x.count} réponse(s)</summary><div class="dashboard-comparison-panel">${x.html}</div></details>`).join('')}</div></section>`;
+function comparisonExtractMetrics(fragment){
+ const metrics=new Map();
+ const add=(key,value)=>{const number=comparisonNumeric(value);if(key&&number!==null)metrics.set(key,number)};
+ fragment.querySelectorAll('.content-indicators').forEach((section,sectionIndex)=>{
+  const sectionKey=section.getAttribute('data-display-block')||String(sectionIndex);
+  const sectionName=section.querySelector(':scope > h3')?.textContent?.trim()||`Bloc ${sectionIndex+1}`;
+  section.querySelectorAll('.indicator-card').forEach((card,cardIndex)=>{
+   const title=card.querySelector('h4')?.textContent?.trim()||`Indicateur ${cardIndex+1}`;
+   const base=`${sectionKey}/${cardIndex}`;
+   const prefix=`${sectionName} — ${title}`;
+   // Indicateurs numériques et nombres de fiches : sous-libellé + valeur.
+   card.querySelectorAll('small').forEach(label=>{
+    const parent=label.parentElement;
+    const value=label.nextElementSibling?.textContent?.trim();
+    if(value)add(`${base}/kpi/${label.textContent.trim()}`,value);
+   });
+   // Ventilations : chaque combinaison modalité / statistique est une ligne du comparatif.
+   card.querySelectorAll('table').forEach((table,tableIndex)=>{
+    const headers=[...table.querySelectorAll('thead tr:last-child th')].map(th=>th.textContent.trim());
+    table.querySelectorAll('tbody tr').forEach(tr=>{
+     const cells=[...tr.children].map(td=>td.textContent.trim());
+     if(cells.length<2)return;
+     for(let i=1;i<cells.length;i++){
+      const value=comparisonNumeric(cells[i]);
+      if(value!==null)add(`${base}/table/${tableIndex}/${cells[0]}/${headers[i]||i}`,value);
+     }
+    });
+   });
+   // Modalités hors tableaux : « Modalité : 7 » ou « Modalité : 7 (23 %) ».
+   if(!card.querySelector('table')){
+    card.querySelectorAll('strong').forEach(strong=>{
+     const line=strong.parentElement;
+     if(!line||line.querySelector('small')||line.closest('.indicator-subgroup'))return;
+     const raw=line.textContent.trim();
+     const numeric=strong.textContent.trim();
+     const idx=raw.indexOf(numeric);
+     const label=idx>=0?raw.slice(0,idx).replace(/\s*:\s*$/,'').trim():'';
+     if(label)add(`${base}/category/${label}`,numeric);
+    });
+   }
+   // Conserver un libellé lisible même lorsque deux questions portent le même nom.
+   for(const [key,value] of [...metrics])if(key.startsWith(`${base}/`)){
+    const suffix=key.slice(base.length+1).split('/');
+    let metric=suffix[0]==='kpi'?suffix.slice(1).join(' / '):suffix[0]==='category'?suffix.slice(1).join(' / '):suffix.slice(2).join(' — ');
+    metrics.set(key,{label:`${prefix} — ${metric}`,value});
+   }
+  });
+ });
+ return metrics;
 }
+function comparisonRender(){
+ const codes=state.compareCodes.filter(code=>state.periods.some(p=>codeOf(p.Periode_Code)===code));
+ if(codes.length<2)return '<div class="status-info">Sélectionnez au moins deux périodes pour lancer la comparaison.</div>';
+ const previous={responses:state.responses,hydrated:state.hydrated,periodCode:state.periodCode};
+ const samples=[];
+ try{
+  for(const code of codes){
+   const data=comparisonHydrated(code);
+   state.responses=data.responses;state.hydrated=data.hydrated;state.periodCode=code;
+   const fragment=document.createElement('div');fragment.innerHTML=renderGlobal();
+   samples.push({code,label:comparisonPeriodName(code),count:data.responses.length,metrics:comparisonExtractMetrics(fragment)});
+  }
+ }finally{state.responses=previous.responses;state.hydrated=previous.hydrated;state.periodCode=previous.periodCode;}
+ const ref=samples.find(x=>x.code===state.compareReference)||samples[0];
+ const keys=[...new Set(samples.flatMap(x=>[...x.metrics.keys()]))];
+ const heading=['Indicateur',...samples.map(x=>x.label),...samples.filter(x=>x!==ref).map(x=>`Écart ${x.label} / ${ref.label}`),...samples.filter(x=>x!==ref).map(x=>`Évolution ${x.label} / ${ref.label}`)];
+ const rows=keys.map(key=>{
+  const entry=samples.map(x=>x.metrics.get(key)).find(Boolean);
+  const base=ref.metrics.get(key)?.value;
+  const values=samples.map(x=>`<td>${x.metrics.has(key)?comparisonFormat(x.metrics.get(key).value):'—'}</td>`).join('');
+  const deltas=samples.filter(x=>x!==ref).map(x=>{const value=x.metrics.get(key)?.value;return `<td>${value!==undefined&&base!==undefined?comparisonFormat(value-base):'—'}</td>`}).join('');
+  const changes=samples.filter(x=>x!==ref).map(x=>{const value=x.metrics.get(key)?.value;return `<td>${value!==undefined&&base!==undefined&&base!==0?`${comparisonFormat((value-base)/Math.abs(base)*100)} %`:'—'}</td>`}).join('');
+  return `<tr><th scope="row">${escapeHtml(entry?.label||key)}</th>${values}${deltas}${changes}</tr>`;
+ }).join('');
+ const table=keys.length?`<div class="dash-table-wrap"><table class="dash-table dashboard-compare-table"><thead><tr>${heading.map(h=>`<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="status-info">Aucun résultat numérique comparable n’a été trouvé pour les indicateurs sélectionnés.</div>';
+ return `<section class="dashboard-comparison-results"><h2>Comparaison multi-périodes</h2><p class="help">Tableau comparatif unique · Référence : ${escapeHtml(ref.label)}. Les cellules « — » correspondent à une donnée absente ou non calculable. Les évolutions ne sont pas calculées lorsque la référence vaut zéro.</p>${table}</section>`;
+}
+
 function bindComparison(){
  document.querySelector('[data-compare-enabled]')?.addEventListener('change',e=>{state.compareEnabled=e.target.checked;render()});
  document.querySelectorAll('[data-compare-code]').forEach(input=>input.addEventListener('change',e=>{const code=e.target.dataset.compareCode;state.compareCodes=e.target.checked?[...new Set([...state.compareCodes,code])]:state.compareCodes.filter(x=>x!==code);if(!state.compareCodes.includes(state.compareReference))state.compareReference=state.compareCodes[0]||'';render()}));

@@ -292,3 +292,13 @@ body[data-module="dashboard"] .builder-page-head h1{font-size:24px}
 .dashboard-comparison-panels>details{border:1px solid #dbe3ed;border-radius:10px;padding:12px;background:#fff}
 .dashboard-comparison-panels>details>summary{cursor:pointer;font-weight:700}
 .dashboard-comparison-panel{padding-top:12px}
+
+/* V4.1.1 : alignement du sélecteur et tableau comparatif lisible. */
+body.dashboard-view-mode .dashboard-view-actions{align-items:flex-end}
+body.dashboard-view-mode .dashboard-period-control{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;margin:0;font-size:.86rem}
+body.dashboard-view-mode .dashboard-period-control select{min-width:200px;max-width:300px;min-height:38px;box-sizing:border-box}
+.dashboard-compare-table th:first-child{position:sticky;left:0;z-index:2;background:#f8fafc;min-width:260px}
+.dashboard-compare-table td{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.dashboard-compare-table th:not(:first-child){white-space:nowrap;text-align:right}
+.dashboard-comparison-results .dash-table-wrap{max-width:100%}
+@media(max-width:700px){body.dashboard-view-mode .dashboard-period-control{width:100%;flex-wrap:wrap;white-space:normal}body.dashboard-view-mode .dashboard-period-control select{width:100%;max-width:none}}
