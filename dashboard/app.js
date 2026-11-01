@@ -92,51 +92,59 @@ function comparisonPeriodName(code){const p=state.periods.find(x=>codeOf(x.Perio
 function comparisonNumeric(raw){const str=String(raw??'').trim().replace(/[\s\u00a0\u202f]/g,'').replace('%','').replace(',','.');if(!str||!/^[-+]?\d+(?:\.\d+)?$/.test(str))return null;const n=Number(str);return Number.isFinite(n)?n:null}
 function comparisonFormat(n){return Number.isFinite(n)?n.toLocaleString('fr-FR',{maximumFractionDigits:2}):'—'}
 function comparisonExtractMetrics(fragment){
+ // Lire les deux formats de blocs : indicateurs réutilisés ET indicateurs créés dans le Dashboard.
  const metrics=new Map();
- const add=(key,value)=>{const number=comparisonNumeric(value);if(key&&number!==null)metrics.set(key,number)};
- fragment.querySelectorAll('.content-indicators').forEach((section,sectionIndex)=>{
-  const sectionKey=section.getAttribute('data-display-block')||String(sectionIndex);
-  const sectionName=section.querySelector(':scope > h3')?.textContent?.trim()||`Bloc ${sectionIndex+1}`;
-  section.querySelectorAll('.indicator-card').forEach((card,cardIndex)=>{
-   const title=card.querySelector('h4')?.textContent?.trim()||`Indicateur ${cardIndex+1}`;
-   const base=`${sectionKey}/${cardIndex}`;
-   const prefix=`${sectionName} — ${title}`;
-   // Indicateurs numériques et nombres de fiches : sous-libellé + valeur.
-   card.querySelectorAll('small').forEach(label=>{
-    const parent=label.parentElement;
-    const value=label.nextElementSibling?.textContent?.trim();
-    if(value)add(`${base}/kpi/${label.textContent.trim()}`,value);
-   });
-   // Ventilations : chaque combinaison modalité / statistique est une ligne du comparatif.
-   card.querySelectorAll('table').forEach((table,tableIndex)=>{
-    const headers=[...table.querySelectorAll('thead tr:last-child th')].map(th=>th.textContent.trim());
-    table.querySelectorAll('tbody tr').forEach(tr=>{
-     const cells=[...tr.children].map(td=>td.textContent.trim());
-     if(cells.length<2)return;
-     for(let i=1;i<cells.length;i++){
-      const value=comparisonNumeric(cells[i]);
-      if(value!==null)add(`${base}/table/${tableIndex}/${cells[0]}/${headers[i]||i}`,value);
-     }
+ const add=(key,label,value)=>{
+  const number=comparisonNumeric(value);
+  if(key&&number!==null)metrics.set(key,{label,value:number});
+ };
+ const panels=[...fragment.querySelectorAll('[data-view-tab-panel]')];
+ const scopes=panels.length?panels:[fragment];
+ scopes.forEach((panel,panelIndex)=>{
+  const tabKey=panel.dataset.viewTabPanel||`vue-${panelIndex}`;
+  const cards=[...panel.querySelectorAll('.indicator-card')];
+  cards.forEach((card,cardIndex)=>{
+   const wrapper=card.closest('.content-indicators');
+   const title=card.querySelector(':scope > h3,:scope > h4')?.textContent?.trim()||`Indicateur ${cardIndex+1}`;
+   const base=`${tabKey}/${wrapper?.dataset.displayBlock||''}/${cardIndex}`;
+   const sections=[...card.querySelectorAll('.indicator-part')];
+   const groups=sections.length?sections:[card];
+   groups.forEach((group,groupIndex)=>{
+    const heading=group===card?'':group.querySelector(':scope > h4')?.textContent?.trim()||'';
+    const prefix=[title,heading].filter(Boolean).join(' — ');
+    const groupKey=`${base}/${groupIndex}`;
+    // Indicateurs KPI (sommes, moyennes, nombres de fiches...), indépendamment du style CSS.
+    group.querySelectorAll('small').forEach((label,labelIndex)=>{
+     const next=label.nextElementSibling;
+     if(!next||!next.matches('div,strong,span'))return;
+     const name=label.textContent.trim();
+     add(`${groupKey}/kpi/${name}`,`${prefix} — ${name}`,next.textContent.trim());
+    });
+    // Modalités présentées sous forme de lignes (choix radio, cases à cocher).
+    group.querySelectorAll('.metric-table > div').forEach((line,lineIndex)=>{
+     const label=line.querySelector('span')?.textContent?.trim();
+     const value=line.querySelector('strong')?.textContent?.trim();
+     // Une cellule telle que « 7 (25 %) » représente 7 réponses, pas 725.
+     const leading=value?.match(/^\s*([-+]?\d[\d\s\u00a0\u202f]*(?:[,.]\d+)?)/)?.[1];
+     if(label&&leading)add(`${groupKey}/modalite/${label}`,`${prefix} — ${label}`,leading);
+    });
+    group.querySelectorAll('table').forEach((table,tableIndex)=>{
+     const headers=[...table.querySelectorAll('thead tr:last-child th')].map(th=>th.textContent.trim());
+     table.querySelectorAll('tbody tr, tfoot tr').forEach(tr=>{
+      const cells=[...tr.children].map(td=>td.textContent.trim());
+      if(cells.length<2)return;
+      for(let i=1;i<cells.length;i++){
+       const col=headers[i]||`Colonne ${i+1}`;
+       add(`${groupKey}/table/${tableIndex}/${cells[0]}/${col}`,`${prefix} — ${cells[0]} — ${col}`,cells[i]);
+      }
+     });
     });
    });
-   // Modalités hors tableaux : « Modalité : 7 » ou « Modalité : 7 (23 %) ».
-   if(!card.querySelector('table')){
-    card.querySelectorAll('strong').forEach(strong=>{
-     const line=strong.parentElement;
-     if(!line||line.querySelector('small')||line.closest('.indicator-subgroup'))return;
-     const raw=line.textContent.trim();
-     const numeric=strong.textContent.trim();
-     const idx=raw.indexOf(numeric);
-     const label=idx>=0?raw.slice(0,idx).replace(/\s*:\s*$/,'').trim():'';
-     if(label)add(`${base}/category/${label}`,numeric);
-    });
-   }
-   // Conserver un libellé lisible même lorsque deux questions portent le même nom.
-   for(const [key,value] of [...metrics])if(key.startsWith(`${base}/`)){
-    const suffix=key.slice(base.length+1).split('/');
-    let metric=suffix[0]==='kpi'?suffix.slice(1).join(' / '):suffix[0]==='category'?suffix.slice(1).join(' / '):suffix.slice(2).join(' — ');
-    metrics.set(key,{label:`${prefix} — ${metric}`,value});
-   }
+  });
+  // Les blocs « Répondants » sont de vrais indicateurs chiffrés du Dashboard.
+  panel.querySelectorAll('.dash-kpi').forEach((k,i)=>{
+   const label=k.querySelector('span')?.textContent?.trim()||'Répondants';
+   add(`${tabKey}/repondants/${i}`,label,k.querySelector('strong')?.textContent?.trim());
   });
  });
  return metrics;
