@@ -149,6 +149,20 @@ function comparisonExtractMetrics(fragment){
  });
  return metrics;
 }
+// Présentation des comparaisons : séparer question, modalité et statistique.
+// Les identifiants techniques des métriques restent inchangés pour la correspondance entre périodes.
+function comparisonPresentation(key,label){
+ const pieces=String(label||'').split(' — ').map(x=>x.trim()).filter(Boolean);
+ const primary=pieces.shift()||'Indicateur';
+ const title=primary.split(' › ').pop().replace(/\s*\([^()]*\)\s*$/,'').trim()||primary;
+ const statisticNames=new Set(['Moyenne','Somme','Nombre','Minimum','Maximum','Médiane','Total','Nombre total','Valeurs renseignées','Valeurs distinctes','Total des sélections','Sélections moyennes','Moyenne par répondant','Répondants avec au moins une fiche']);
+ let statistic='';
+ if(pieces.length&&statisticNames.has(pieces[pieces.length-1]))statistic=pieces.pop();
+ const useful=pieces.filter(x=>!/^Ventilation par\b/i.test(x)&&x!=='Global');
+ let rowLabel=useful.join(' — ');
+ if(!rowLabel){const tail=String(key).split('/');if(tail.includes('modalite'))rowLabel=tail[tail.length-1];else if(tail.includes('kpi'))rowLabel='Global';else rowLabel='Ensemble';}
+ return {title,rowLabel,statistic};
+}
 function comparisonRender(){
  const codes=state.compareCodes.filter(code=>state.periods.some(p=>codeOf(p.Periode_Code)===code));
  if(codes.length<2)return '<div class="status-info">Sélectionnez au moins deux périodes pour lancer la comparaison.</div>';
@@ -164,14 +178,20 @@ function comparisonRender(){
  }finally{state.responses=previous.responses;state.hydrated=previous.hydrated;state.periodCode=previous.periodCode;}
  const ref=samples.find(x=>x.code===state.compareReference)||samples[0];
  const keys=[...new Set(samples.flatMap(x=>[...x.metrics.keys()]))];
- const heading=['Indicateur',...samples.map(x=>x.label),...samples.filter(x=>x!==ref).map(x=>`Écart ${x.label} / ${ref.label}`),...samples.filter(x=>x!==ref).map(x=>`Évolution ${x.label} / ${ref.label}`)];
+ const heading=['Modalité / structure','Statistique',...samples.map(x=>x.label),...samples.filter(x=>x!==ref).map(x=>`Écart ${x.label} / ${ref.label}`),...samples.filter(x=>x!==ref).map(x=>`Évolution ${x.label} / ${ref.label}`)];
+ let lastGroup='';
  const rows=keys.map(key=>{
   const entry=samples.map(x=>x.metrics.get(key)).find(Boolean);
+  const info=comparisonPresentation(key,entry?.label||key);
+  // Le regroupement repose sur la position stable du bloc, et non sur son titre (potentiellement dupliqué).
+  const groupId=key.split('/').slice(0,3).join('/');
+  const titleRow=groupId!==lastGroup?`<tr class="dashboard-compare-group"><th colspan="${heading.length}" scope="colgroup">${escapeHtml(info.title)}</th></tr>`:'';
+  lastGroup=groupId;
   const base=ref.metrics.get(key)?.value;
   const values=samples.map(x=>`<td>${x.metrics.has(key)?comparisonFormat(x.metrics.get(key).value):'—'}</td>`).join('');
   const deltas=samples.filter(x=>x!==ref).map(x=>{const value=x.metrics.get(key)?.value;return `<td>${value!==undefined&&base!==undefined?comparisonFormat(value-base):'—'}</td>`}).join('');
   const changes=samples.filter(x=>x!==ref).map(x=>{const value=x.metrics.get(key)?.value;return `<td>${value!==undefined&&base!==undefined&&base!==0?`${comparisonFormat((value-base)/Math.abs(base)*100)} %`:'—'}</td>`}).join('');
-  return `<tr><th scope="row">${escapeHtml(entry?.label||key)}</th>${values}${deltas}${changes}</tr>`;
+  return `${titleRow}<tr><th scope="row">${escapeHtml(info.rowLabel)}</th><td>${escapeHtml(info.statistic||'—')}</td>${values}${deltas}${changes}</tr>`;
  }).join('');
  const table=keys.length?`<div class="dash-table-wrap"><table class="dash-table dashboard-compare-table"><thead><tr>${heading.map(h=>`<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="status-info">Aucun résultat numérique comparable n’a été trouvé pour les indicateurs sélectionnés.</div>';
  return `<section class="dashboard-comparison-results"><h2>Comparaison multi-périodes</h2><p class="help">Tableau comparatif unique · Référence : ${escapeHtml(ref.label)}. Les cellules « — » correspondent à une donnée absente ou non calculable. Les évolutions ne sont pas calculées lorsque la référence vaut zéro.</p>${table}</section>`;

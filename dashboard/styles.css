@@ -302,3 +302,7 @@ body.dashboard-view-mode .dashboard-period-control select{min-width:200px;max-wi
 .dashboard-compare-table th:not(:first-child){white-space:nowrap;text-align:right}
 .dashboard-comparison-results .dash-table-wrap{max-width:100%}
 @media(max-width:700px){body.dashboard-view-mode .dashboard-period-control{width:100%;flex-wrap:wrap;white-space:normal}body.dashboard-view-mode .dashboard-period-control select{width:100%;max-width:none}}
+/* V4.1.3 : titres de questions séparés des modalités et des statistiques. */
+.dashboard-compare-table tr.dashboard-compare-group th{background:#eef2ff;color:#263a66;text-align:left;font-weight:700;padding:11px 12px;border-top:2px solid #c7d2fe;white-space:normal}
+.dashboard-compare-table tbody tr:not(.dashboard-compare-group) th{text-align:left;font-weight:500;white-space:normal}
+.dashboard-compare-table tbody tr:not(.dashboard-compare-group) td:nth-child(2){text-align:left;white-space:nowrap;color:#475569}
