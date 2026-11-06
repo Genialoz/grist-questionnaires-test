@@ -1352,7 +1352,7 @@ function renderControl(q, answers=state.answers, ficheMode=false, forcedReadOnly
     readOnly?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});if(isMultiSelectList(q)){const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]),labels=opts.filter(o=>selected.has(String(o.value))).map(o=>o.label),summary=labels.length?labels.join(", "):"— Sélectionner —",open=state.openMultiSelect===`${ficheMode?"f":"p"}:${code}`;return `<div class="select-group multi-select-group"><details class="multi-select-dropdown" data-multiselect-details="${escapeHtml(code)}" data-multiselect-scope="${ficheMode?"f":"p"}"${open?" open":""}><summary><span>${escapeHtml(summary)}</span><small>${selected.size?`${selected.size} sélection${selected.size>1?"s":""}`:""}</small></summary><div class="multi-select-panel">${opts.map(o=>`<label class="multi-select-option"><input type="checkbox" data-multiselect="1" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}</div></details>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
+  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});if(isMultiSelectList(q)){const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]),labels=opts.filter(o=>selected.has(String(o.value))).map(o=>o.label),open=state.openMultiSelect===`${ficheMode?"f":"p"}:${code}`,summary=open?"Sélectionner des modalités":(labels.length?labels.join(", "):"— Sélectionner —");return `<div class="select-group multi-select-group"><details class="multi-select-dropdown" data-multiselect-details="${escapeHtml(code)}" data-multiselect-scope="${ficheMode?"f":"p"}"${open?" open":""}><summary><span>${escapeHtml(summary)}</span><small>${selected.size?`${selected.size} sélection${selected.size>1?"s":""}`:""}</small></summary><div class="multi-select-panel">${opts.map(o=>`<label class="multi-select-option"><input type="checkbox" data-multiselect="1" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}</div></details>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
   if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
   if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
@@ -1878,8 +1878,8 @@ function render() {
     changePeriodView(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"",{home:true});
   });
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
-  root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
-  root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
+  root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;const title=el.querySelector("summary span");if(title)title.textContent="Sélectionner des modalités";return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
+  root.querySelectorAll("input[data-question]:not([type=checkbox]):not([type=radio]),textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   root.querySelectorAll("[data-clear-matrix-row]").forEach(el=>el.addEventListener("click",clearMatrixRowAnswer));
   updateMatrixTotals(root);
@@ -1946,7 +1946,7 @@ function render() {
   root.querySelectorAll("[data-copy-archive-fiche]").forEach(el=>el.addEventListener("click",e=>copyArchivedFicheToPeriod(e.currentTarget.dataset.copyArchiveFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
-  root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
+  root.querySelectorAll("input[data-fiche-question]:not([type=checkbox]):not([type=radio]),textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
   root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("pointerdown",e=>{
     const btn=e.currentTarget, isSub=!!btn.closest("[data-subfiche-editor]");
     const ed=isSub?state.subFicheEditor:state.ficheEditor, code=btn.dataset.clearFicheQuestion||"";
@@ -1988,6 +1988,54 @@ function render() {
 
 }
 
+
+// Updating a manually created multi-choice list must not recreate its open panel.
+// Rebuilding it resets the panel's position (especially with long lists).
+function refreshMultiSelectSummary(target, values) {
+  const details=target?.closest?.('[data-multiselect-details]');
+  if(!details)return;
+  const chosen=new Set((Array.isArray(values)?values:[]).map(String));
+  details.querySelectorAll('input[data-multiselect="1"]').forEach(el=>{el.checked=chosen.has(String(el.value));});
+  const selected=[...details.querySelectorAll('input[data-multiselect="1"]:checked')];
+  const labels=selected.map(el=>el.closest('label')?.querySelector('span')?.textContent?.trim()||el.value);
+  const summary=details.querySelector('summary');
+  const title=summary?.querySelector('span');
+  const count=summary?.querySelector('small');
+  if(title)title.textContent=details.open?"Sélectionner des modalités":(labels.length?labels.join(', '):'— Sélectionner —');
+  if(count)count.textContent=labels.length?`${labels.length} sélection${labels.length>1?'s':''}`:'';
+}
+
+// Keep the selected item visible when a multi-select rerenders because it drives visibility rules.
+function renderPreservingMultiSelectPosition(target) {
+  const details=target?.closest?.("[data-multiselect-details]");
+  const panel=target?.closest?.(".multi-select-panel");
+  if (!details || !panel) { renderPreservingInputFocus(target); return; }
+  const scope=details.dataset.multiselectScope||"p";
+  const code=details.dataset.multiselectDetails;
+  const value=target.value;
+  const before=details.getBoundingClientRect().top;
+  const scroll=panel.scrollTop;
+  const selectedOffset=target.getBoundingClientRect().top-panel.getBoundingClientRect().top;
+  const isSub=Boolean(target.closest("[data-subfiche-editor]"));
+  const key=`${scope}:${code}`;
+  state.multiSelectScroll={...(state.multiSelectScroll||{}),[key]:scroll};
+  state.openMultiSelect=key;
+  render();
+  const container=scope==="f"?(document.querySelector(isSub?"[data-subfiche-editor]":"[data-fiche-editor]")||document):document;
+  const fresh=[...container.querySelectorAll("[data-multiselect-details]")].find(el=>el.dataset.multiselectDetails===code && (el.dataset.multiselectScope||"p")===scope);
+  if(!fresh)return;
+  const freshPanel=fresh.querySelector(".multi-select-panel");
+  if(freshPanel){freshPanel.scrollTop=scroll; freshPanel.style.overflowAnchor="none";}
+  const delta=fresh.getBoundingClientRect().top-before;
+  if(Math.abs(delta)>1)window.scrollBy(0,delta);
+  const checkbox=[...(freshPanel?.querySelectorAll('input[data-multiselect="1"]')||[])].find(el=>el.value===value);
+  checkbox?.focus({preventScroll:true});
+  requestAnimationFrame(()=>{
+    if(freshPanel){freshPanel.scrollTop=scroll;const drift=checkbox?checkbox.getBoundingClientRect().top-freshPanel.getBoundingClientRect().top-selectedOffset:0;if(Math.abs(drift)>1)freshPanel.scrollTop+=drift;}
+    const adjustment=fresh.getBoundingClientRect().top-before;
+    if(Math.abs(adjustment)>1)window.scrollBy(0,adjustment);
+  });
+}
 
 function renderPreservingInputFocus(target) {
   const questionCode=target?.dataset?.ficheQuestion ?? target?.dataset?.question;
@@ -2084,7 +2132,9 @@ function onFicheAnswer(e) {
   for (const key of Object.keys(editor.answers)) editor.answers[key]=combined[key] ?? "";
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const isMultiSelect=e.target.dataset.multiselect==="1";
-  if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) renderPreservingInputFocus(e.target);
+  const needsRender=e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter;
+  if(isMultiSelect){if(needsRender)renderPreservingMultiSelectPosition(e.target);else refreshMultiSelectSummary(e.target,editor.answers[code]);}
+  else if(needsRender)renderPreservingInputFocus(e.target);
 }
 export function collectFicheAnswers(root, currentAnswers={}) {
   const answers={...currentAnswers};
@@ -2281,7 +2331,9 @@ function onAnswer(e) {
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const drivesDataTable=(state.definition.questions ?? []).some(q=>isDataTableQuestion(q)&&String(q.TD_Mode||"all")==="personalized"&&String(q.TD_Context_Source||"campaign")==="question"&&String(q.TD_Context_Question||"")===String(code));
   const isMultiSelect=e.target.dataset.multiselect==="1";
-  if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
+  const needsRender=e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable;
+  if(isMultiSelect){if(needsRender)renderPreservingMultiSelectPosition(e.target);else refreshMultiSelectSummary(e.target,state.answers[code]);}
+  else if(needsRender)renderPreservingInputFocus(e.target);
 }
 
 export function validateVisiblePage(page, answers={},definition=state.definition??{}) {
