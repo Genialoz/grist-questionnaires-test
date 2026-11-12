@@ -1,7 +1,7 @@
 import {rowsFromTable,codeOf,isTrue} from "../shared/grist-common.js";
 import {hydrateResponse} from "../questionnaire/persistence.js";
 const TABLES=["DASHBOARDS","CAMPAGNES","VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE","COLONNES_MATRICE","BIBLIOTHEQUE_REGROUPEMENTS","PARTICIPATIONS","DESTINATAIRES_CAMPAGNE","PERIODES_QUESTIONNAIRE","QUESTIONNAIRES"];
-const state={dashboard:null,campaigns:[],definition:null,responses:[],hydrated:[],tab:"global",selected:null,mode:"view",responseScope:"real",loaded:null,config:null,periodCode:"",periods:[],compareCodes:[],compareReference:"",compareEnabled:false};
+const state={dashboard:null,campaigns:[],definition:null,responses:[],hydrated:[],tab:"global",selected:null,mode:"view",responseScope:"real",loaded:null,config:null,periodCode:"",periods:[],compareCodes:[],compareReference:"",compareEnabled:false,compareChartEnabled:false,compareChartType:"bar"};
 const DASHBOARD_SHARE_STORAGE_KEY="gristionnaire.dashboardShareGrant";
 const DASHBOARD_SHARE_MAX_AGE_MS=120000;
 function consumeDashboardShareGrant(){try{const raw=localStorage.getItem(DASHBOARD_SHARE_STORAGE_KEY);if(!raw)return null;localStorage.removeItem(DASHBOARD_SHARE_STORAGE_KEY);const x=JSON.parse(raw);const token=String(x?.token||"").trim(),ts=Number(x?.ts||0);if(!token||!ts||Date.now()-ts>DASHBOARD_SHARE_MAX_AGE_MS)return null;return {token,ts}}catch(_){return null}}
@@ -171,6 +171,53 @@ function comparisonPresentation(key,label){
  if(!rowLabel){const tail=String(key).split('/');if(tail.includes('modalite'))rowLabel=tail[tail.length-1];else if(tail.includes('kpi'))rowLabel='Global';else rowLabel='Ensemble';}
  return {title,rowLabel,statistic};
 }
+// V4.2 : graphiques comparatifs SVG sans dépendance externe. Aucune modification des valeurs sources.
+function comparisonChartSvg(group,samples,kind){
+ const entries=group.rows.filter(r=>samples.some(s=>Number.isFinite(s.metrics.get(r.key)?.value)));
+ if(!entries.length)return '';
+ const series=entries.slice(0,12), labels=samples.map(s=>s.label);
+ const values=series.map(r=>samples.map(s=>s.metrics.get(r.key)?.value??null));
+ const stacked=kind==='stacked';
+ if(stacked&&(series.length<2||values.some(row=>row.some(v=>v!==null&&v<0))))return '';
+ const width=760,height=315,left=68,right=20,top=22,bottom=77,plotW=width-left-right,plotH=height-top-bottom;
+ const n=labels.length,all=values.flat().filter(Number.isFinite);
+ if(!all.length)return '';
+ const totals=labels.map((_,j)=>values.reduce((sum,row)=>sum+(Number.isFinite(row[j])?row[j]:0),0));
+ const max=Math.max(0,...(stacked?totals:all)),min=stacked?0:Math.min(0,...all);
+ const lo=min===max?Math.min(0,min-1):min,hi=min===max?max+1:max;
+ const sx=j=>left+(j+.5)*plotW/n;
+ const sy=v=>top+(hi-v)*plotH/(hi-lo);
+ const colors=['#2563eb','#e87928','#10a37f','#9333ea','#e11d48','#0891b2','#a16207','#64748b','#db2777','#16a34a','#4f46e5','#dc2626'];
+ const parts=[];
+ for(let tick=0;tick<=4;tick++){
+  const v=lo+(hi-lo)*tick/4,y=sy(v);
+  parts.push(`<line x1="${left}" y1="${y.toFixed(1)}" x2="${width-right}" y2="${y.toFixed(1)}" stroke="#dde4eb"/>`);
+  parts.push(`<text x="${left-9}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="11" fill="#475569">${escapeHtml(comparisonFormat(v))}</text>`);
+ }
+ labels.forEach((label,j)=>parts.push(`<text x="${sx(j).toFixed(1)}" y="${height-bottom+19}" text-anchor="middle" font-size="11" fill="#334155">${escapeHtml(label.length>20?label.slice(0,19)+'…':label)}</text>`));
+ if(kind==='line'){
+  values.forEach((row,i)=>{
+   let segment=[];
+   function flush(){if(segment.length>1)parts.push(`<polyline points="${segment.join(' ')}" fill="none" stroke="${colors[i%colors.length]}" stroke-width="2.6" stroke-linejoin="round"/>`);segment=[];}
+   row.forEach((v,j)=>{if(!Number.isFinite(v)){flush();return;}const x=sx(j),y=sy(v);segment.push(`${x.toFixed(1)},${y.toFixed(1)}`);parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${colors[i%colors.length]}"><title>${escapeHtml(`${series[i].label} · ${labels[j]} : ${comparisonFormat(v)}`)}</title></circle>`)});
+   flush();
+  });
+ }else if(stacked){
+  labels.forEach((label,j)=>{let running=0;values.forEach((row,i)=>{const v=row[j];if(!Number.isFinite(v)||v===0)return;const y=sy(running+v),h=sy(running)-y;parts.push(`<rect x="${(sx(j)-Math.min(55,plotW/n*.30)).toFixed(1)}" y="${y.toFixed(1)}" width="${(2*Math.min(55,plotW/n*.30)).toFixed(1)}" height="${Math.max(.5,h).toFixed(1)}" fill="${colors[i%colors.length]}"><title>${escapeHtml(`${series[i].label} · ${label} : ${comparisonFormat(v)}`)}</title></rect>`);running+=v;});});
+ }else{
+  const gap=plotW/n,barW=Math.max(2,Math.min(32,gap*.72/series.length));
+  values.forEach((row,i)=>row.forEach((v,j)=>{if(!Number.isFinite(v))return;const x=sx(j)+(i-(series.length-1)/2)*barW,y=Math.min(sy(v),sy(0)),h=Math.max(1,Math.abs(sy(v)-sy(0)));parts.push(`<rect x="${(x-barW*.42).toFixed(1)}" y="${y.toFixed(1)}" width="${(barW*.84).toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[i%colors.length]}"><title>${escapeHtml(`${series[i].label} · ${labels[j]} : ${comparisonFormat(v)}`)}</title></rect>`)}));
+ }
+ const legend=series.map((r,i)=>`<span class="dashboard-compare-legend-item"><span class="dashboard-compare-dot" style="background:${colors[i%colors.length]}"></span>${escapeHtml(r.label)}</span>`).join('');
+ const note=entries.length>12?'<div class="help">Graphique limité aux 12 premières lignes ; toutes restent visibles dans le tableau.</div>':'';
+ return `<div class="dashboard-compare-chart"><h3>${escapeHtml(group.title)}</h3><div class="dashboard-compare-svg-wrap"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Graphique comparatif : ${escapeHtml(group.title)}" xmlns="http://www.w3.org/2000/svg">${parts.join('')}</svg></div><div class="dashboard-compare-legend">${legend}</div>${note}</div>`;
+}
+function comparisonCharts(groups,samples){
+ if(!state.compareChartEnabled)return '';
+ const kind=state.compareChartType;
+ const valid=groups.map(group=>({group,svg:comparisonChartSvg(group,samples,kind)})).filter(x=>x.svg);
+ return `<div class="dashboard-compare-charts">${valid.length?valid.map(x=>x.svg).join(''):'<div class="status-info">Aucun graphique disponible avec ce type pour les indicateurs sélectionnés. Essayez les barres ou les courbes.</div>'}</div>`;
+}
 function comparisonRender(){
  const codes=state.compareCodes.filter(code=>state.periods.some(p=>codeOf(p.Periode_Code)===code));
  if(codes.length<2)return '<div class="status-info">Sélectionnez au moins deux périodes pour lancer la comparaison.</div>';
@@ -188,11 +235,14 @@ function comparisonRender(){
  const keys=[...new Set(samples.flatMap(x=>[...x.metrics.keys()]))];
  const heading=['Modalité / structure','Statistique',...samples.map(x=>x.label),...samples.filter(x=>x!==ref).map(x=>`Écart ${x.label} / ${ref.label}`),...samples.filter(x=>x!==ref).map(x=>`Évolution ${x.label} / ${ref.label}`)];
  let lastGroup='';
+ const chartGroups=[];
  const rows=keys.map(key=>{
   const entry=samples.map(x=>x.metrics.get(key)).find(Boolean);
   const info=comparisonPresentation(key,entry?.label||key);
   // Le regroupement repose sur la position stable du bloc, et non sur son titre (potentiellement dupliqué).
   const groupId=key.split('/').slice(0,3).join('/');
+  if(!chartGroups.length||chartGroups[chartGroups.length-1].id!==groupId)chartGroups.push({id:groupId,title:info.title,rows:[]});
+  chartGroups[chartGroups.length-1].rows.push({key,label:[info.rowLabel,info.statistic].filter(x=>x&&x!=='—').join(' · ')});
   const titleRow=groupId!==lastGroup?`<tr class="dashboard-compare-group"><th colspan="${heading.length}" scope="colgroup">${escapeHtml(info.title)}</th></tr>`:'';
   lastGroup=groupId;
   const base=ref.metrics.get(key)?.value;
@@ -202,13 +252,15 @@ function comparisonRender(){
   return `${titleRow}<tr><th scope="row">${escapeHtml(info.rowLabel)}</th><td>${escapeHtml(info.statistic||'—')}</td>${values}${deltas}${changes}</tr>`;
  }).join('');
  const table=keys.length?`<div class="dash-table-wrap"><table class="dash-table dashboard-compare-table"><thead><tr>${heading.map(h=>`<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="status-info">Aucun résultat numérique comparable n’a été trouvé pour les indicateurs sélectionnés.</div>';
- return `<section class="dashboard-comparison-results"><h2>Comparaison multi-périodes</h2><p class="help">Tableau comparatif unique · Référence : ${escapeHtml(ref.label)}. Les cellules « — » correspondent à une donnée absente ou non calculable. Les évolutions ne sont pas calculées lorsque la référence vaut zéro.</p>${table}</section>`;
+ return `<section class="dashboard-comparison-results"><h2>Comparaison multi-périodes</h2><p class="help">Tableau comparatif unique · Référence : ${escapeHtml(ref.label)}. Les cellules « — » correspondent à une donnée absente ou non calculable. Les évolutions ne sont pas calculées lorsque la référence vaut zéro.</p>${table}${keys.length?`<div class="dashboard-compare-graph-controls"><label><input type="checkbox" data-compare-chart-enabled ${state.compareChartEnabled?'checked':''}> Afficher les graphiques comparatifs</label><label>Type de graphique <select data-compare-chart-type ${state.compareChartEnabled?'':'disabled'}><option value="bar" ${state.compareChartType==='bar'?'selected':''}>Barres</option><option value="line" ${state.compareChartType==='line'?'selected':''}>Courbes</option><option value="stacked" ${state.compareChartType==='stacked'?'selected':''}>Barres empilées</option></select></label></div>${comparisonCharts(chartGroups,samples)}`:''}</section>`;
 }
 
 function bindComparison(){
  document.querySelector('[data-compare-enabled]')?.addEventListener('change',e=>{state.compareEnabled=e.target.checked;render()});
  document.querySelectorAll('[data-compare-code]').forEach(input=>input.addEventListener('change',e=>{const code=e.target.dataset.compareCode;state.compareCodes=e.target.checked?[...new Set([...state.compareCodes,code])]:state.compareCodes.filter(x=>x!==code);if(!state.compareCodes.includes(state.compareReference))state.compareReference=state.compareCodes[0]||'';render()}));
  document.querySelector('[data-compare-reference]')?.addEventListener('change',e=>{state.compareReference=e.target.value;render()});
+ document.querySelector('[data-compare-chart-enabled]')?.addEventListener('change',e=>{state.compareChartEnabled=e.target.checked;render()});
+ document.querySelector('[data-compare-chart-type]')?.addEventListener('change',e=>{state.compareChartType=e.target.value;render()});
 }
 function responseScopeLabel(){return {real:"Réponses réelles",test:"Simulations",all:"Toutes les réponses (avec simulations)"}[state.responseScope]||"Réponses réelles"}
 function responseScopeControl(){return `<label>Périmètre <select data-response-scope>${["real","test","all"].map(scope=>`<option value="${scope}" ${state.responseScope===scope?"selected":""}>${escapeHtml({real:"Réponses réelles",test:"Simulations",all:"Toutes les réponses (avec simulations)"}[scope])}</option>`).join("")}</select></label>`}

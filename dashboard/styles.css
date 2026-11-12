@@ -306,3 +306,17 @@ body.dashboard-view-mode .dashboard-period-control select{min-width:200px;max-wi
 .dashboard-compare-table tr.dashboard-compare-group th{background:#eef2ff;color:#263a66;text-align:left;font-weight:700;padding:11px 12px;border-top:2px solid #c7d2fe;white-space:normal}
 .dashboard-compare-table tbody tr:not(.dashboard-compare-group) th{text-align:left;font-weight:500;white-space:normal}
 .dashboard-compare-table tbody tr:not(.dashboard-compare-group) td:nth-child(2){text-align:left;white-space:nowrap;color:#475569}
+
+/* V4.2 – Graphiques comparatifs facultatifs */
+.dashboard-compare-graph-controls{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:18px 0 12px;padding:12px 15px;border:1px solid #dbe4ee;background:#f8fafc;border-radius:10px}
+.dashboard-compare-graph-controls label{display:flex;gap:8px;align-items:center;font-size:14px}
+.dashboard-compare-graph-controls select{max-width:220px;padding:6px 9px}
+.dashboard-compare-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,540px),1fr));gap:16px;margin-top:14px}
+.dashboard-compare-chart{padding:15px;background:white;border:1px solid #dbe4ee;border-radius:12px;min-width:0}
+.dashboard-compare-chart h3{font-size:16px;margin:0 0 12px}
+.dashboard-compare-svg-wrap{max-width:100%;overflow-x:auto}
+.dashboard-compare-svg-wrap svg{display:block;width:100%;height:auto;min-width:420px}
+.dashboard-compare-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px}
+.dashboard-compare-legend-item{font-size:12px;color:#334155;display:inline-flex;align-items:center;gap:5px}
+.dashboard-compare-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex-shrink:0}
+@media print{.dashboard-compare-graph-controls{display:none}.dashboard-compare-charts{display:block}.dashboard-compare-chart{break-inside:avoid;margin-bottom:14px}}
