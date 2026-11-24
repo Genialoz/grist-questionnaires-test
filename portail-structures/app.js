@@ -3,6 +3,7 @@
 import {lirePublicationSuivi} from '../concepteur/portail-publication.mjs';
 import {ETATS, filtrerStructures, calculerPilotage} from './portail-pilotage.mjs';
 import {genererExcelPortail,nomFichierExcel} from './portail-excel.mjs';
+import {syntheseSelection, prioritesSuivi} from './portail-synthese.mjs';
 const message=document.querySelector('#message'),contenu=document.querySelector('#contenu');
 function text(parent,tag,content,className=''){const node=document.createElement(tag);node.textContent=String(content);if(className)node.className=className;parent.appendChild(node);return node;}
 function fail(code='ACCES_REFUSE'){
@@ -54,11 +55,41 @@ async function init(){
     }
     document.querySelector('#pct-demarrage').textContent=`${pilotage.pctDemarrees} %`;
     document.querySelector('#barre-demarrage').style.width=`${pilotage.pctDemarrees}%`;
+    function dessinerRepartition(cible, stats){
+      cible.replaceChildren();
+      const pourcentages=stats.series.map(s=>s.nombre);
+      const somme=pourcentages.reduce((a,b)=>a+b,0);
+      if(somme===0){text(cible,'span','Aucune structure pour cette sélection','repartition-vide');cible.setAttribute('aria-label','Aucune structure');return;}
+      cible.setAttribute('aria-label',stats.series.map(s=>`${s.libelle} : ${s.nombre} sur ${stats.total}`).join(' ; '));
+      for(const s of stats.series){
+        if(!s.nombre)continue;
+        const segment=text(cible,'span','','segment '+s.etat);
+        segment.style.width=`${100*s.nombre/somme}%`;
+        segment.title=`${s.libelle} : ${s.nombre} (${s.pourcentage} %)`;
+      }
+    }
+    const globalSynthese=syntheseSelection(data,data.structures);
+    dessinerRepartition(document.querySelector('#repartition-globale'),globalSynthese);
+    const legende=document.querySelector('#legende-globale');legende.replaceChildren();
+    for(const s of globalSynthese.series){const item=text(legende,'span','','legende-item');text(item,'span','','pastille '+s.etat);text(item,'span',`${s.libelle} : ${s.nombre} (${s.pourcentage} %)`);}
     const tbody=document.querySelector('#lignes');
     let lignesAffichees=[];
     function afficher(){
       try{lignesAffichees=filtrerStructures(data.structures,{recherche:document.querySelector('#recherche').value,etat:document.querySelector('#etat').value,ordre:document.querySelector('#tri').value});}
       catch(e){console.error('Portail : filtre invalide',e);return;}
+      const statsFiltre=syntheseSelection(data,lignesAffichees);
+      const resume=document.querySelector('#resume-filtre');resume.replaceChildren();
+      for(const [libelle,valeur] of [['Structures affichées',statsFiltre.total],['Ont commencé',`${statsFiltre.pctDemarrees} %`],['Terminées',`${statsFiltre.pctTerminees} %`],['Réponses enregistrées',statsFiltre.reponses]]){
+        const item=text(resume,'div','','mini-indicateur');text(item,'strong',valeur);text(item,'span',libelle);
+      }
+      dessinerRepartition(document.querySelector('#repartition-filtre'),statsFiltre);
+      const priorites=document.querySelector('#liste-priorites');priorites.replaceChildren();
+      const aSuivre=prioritesSuivi(lignesAffichees);
+      if(!aSuivre.length){text(priorites,'li',lignesAffichees.length?'Aucune structure en attente dans la sélection.':'Aucune structure dans la sélection.','priorite-vide');}
+      for(const priorite of aSuivre){
+        const li=text(priorites,'li','','priorite');text(li,'span',priorite.structure,'nom-priorite');
+        text(li,'span',ETATS[priorite.etat]+` · ${priorite.reponses} réponse(s)`,'detail-priorite');
+      }
       tbody.replaceChildren();
       for(const row of lignesAffichees){const tr=text(tbody,'tr','');text(tr,'td',row.structure);const etatCell=text(tr,'td',ETATS[row.etat]);etatCell.className=`etat ${row.etat}`;text(tr,'td',row.reponses);
         const cell=text(tr,'td','');
