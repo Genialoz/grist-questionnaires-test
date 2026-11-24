@@ -1296,7 +1296,7 @@ function initSpacesCampaignButtons(){
 function distributionData(group,all){
  const campaigns=spaceCampaignRows(group),spaces=spaceRowsFor(group,all);
  const members=spaces.flatMap(space=>spaceMemberRows(space,all));
- const validated=verifierDiffusion({liens:campaigns,espaces:spaces,membres});
+ const validated=verifierDiffusion({liens:campaigns,espaces:spaces,membres:members});
  const indexed=new Map();
  for(const [linkId,spaceId] of validated.attribution){
   indexed.set(linkId,spaces.find(e=>String(e.id)===spaceId));
