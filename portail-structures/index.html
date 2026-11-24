@@ -1,15 +1,18 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gristionnaire — Portail des structures</title><script src="https://docs.getgrist.com/grist-plugin-api.js"></script><link rel="stylesheet" href="./styles.css"></head>
 <body><main class="container"><header><small>GRISTIONNAIRE · TEST</small><h1>Espace de service</h1><p id="message" role="status">Vérification de l'accès…</p></header>
-<section id="contenu" hidden><p class="sous-titre" id="campagne"></p><div class="indicateurs" id="indicateurs"></div><div class="progression"><div><strong id="pct-demarrage">0 %</strong> des structures ont commencé</div><div class="barre"><span id="barre-demarrage"></span></div></div>
+<section id="contenu" hidden><p class="sous-titre" id="campagne"></p>
+<nav class="acces-rapide" aria-label="Navigation du portail"><a href="#questionnaires">Questionnaires des structures</a><a href="#suivi-structures">Suivi détaillé</a></nav>
+<div class="statut-publication" id="statut-publication" role="status"></div>
+<section class="acces-questionnaires" id="questionnaires" aria-labelledby="titre-questionnaires"><div class="titre-ligne"><h2 id="titre-questionnaires">Accès aux questionnaires</h2><span class="compte-acces" id="nombre-acces"></span></div><p class="note">Les liens de saisie sont réservés aux structures dont l’accès a été autorisé par le concepteur. Selon les réglages du questionnaire, ils peuvent permettre de modifier les réponses.</p><ul id="liste-questionnaires" class="liste-questionnaires"></ul></section><div class="indicateurs" id="indicateurs"></div><div class="progression"><div><strong id="pct-demarrage">0 %</strong> des structures ont commencé</div><div class="barre"><span id="barre-demarrage"></span></div></div>
 <section class="vue-synthese" aria-labelledby="titre-synthese">
 <h2 id="titre-synthese">Répartition des états</h2>
 <p class="note">Répartition calculée sur le suivi publié de cet espace, sans accès aux réponses individuelles.</p>
 <div id="repartition-globale" class="repartition" role="img" aria-label="Répartition des états du service"></div>
 <div id="legende-globale" class="legende" aria-live="polite"></div>
 </section>
-<div class="titre-ligne"><h2>Suivi des structures</h2><button type="button" id="export-excel">Exporter vers Excel (.xlsx)</button></div>
-<div class="outils"><label>Rechercher une structure<input type="search" id="recherche" placeholder="Nom de structure…"></label><label>État<select id="etat"><option value="tous">Tous les états</option><option value="not-started">Pas commencé</option><option value="in-progress">En cours</option><option value="completed">Complété</option></select></label><label>Trier par<select id="tri"><option value="nom">Nom (A–Z)</option><option value="nom-desc">Nom (Z–A)</option><option value="reponses">Réponses (décroissant)</option><option value="etat">État</option></select></label></div>
+<div class="titre-ligne" id="suivi-structures"><h2>Suivi des structures</h2><button type="button" id="export-excel">Exporter vers Excel (.xlsx)</button></div>
+<div class="outils"><label>Rechercher une structure<input type="search" id="recherche" placeholder="Nom de structure…"></label><label>État<select id="etat"><option value="tous">Tous les états</option><option value="not-started">Pas commencé</option><option value="in-progress">En cours</option><option value="completed">Complété</option></select></label><label>Trier par<select id="tri"><option value="nom">Nom (A–Z)</option><option value="nom-desc">Nom (Z–A)</option><option value="reponses">Réponses (décroissant)</option><option value="etat">État</option></select></label><button type="button" id="reset-filtres" class="reset-filtres">Réinitialiser les filtres</button></div>
 <div class="vue-filtre" aria-labelledby="titre-filtre"><h3 id="titre-filtre">Synthèse de la sélection</h3>
 <div id="resume-filtre" class="resume-filtre" aria-live="polite"></div>
 <div id="repartition-filtre" class="repartition" role="img" aria-label="Répartition des états après filtres"></div>

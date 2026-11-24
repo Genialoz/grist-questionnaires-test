@@ -4,6 +4,7 @@ import {lirePublicationSuivi} from '../concepteur/portail-publication.mjs';
 import {ETATS, filtrerStructures, calculerPilotage} from './portail-pilotage.mjs';
 import {genererExcelPortail,nomFichierExcel} from './portail-excel.mjs';
 import {syntheseSelection, prioritesSuivi} from './portail-synthese.mjs';
+import {accesQuestionnaires,situationPublication,lienQuestionnaireValide} from './portail-accueil.mjs';
 const message=document.querySelector('#message'),contenu=document.querySelector('#contenu');
 function text(parent,tag,content,className=''){const node=document.createElement(tag);node.textContent=String(content);if(className)node.className=className;parent.appendChild(node);return node;}
 function fail(code='ACCES_REFUSE'){
@@ -48,6 +49,27 @@ async function init(){
     let data;try {data=lirePublicationSuivi(allowed[0].data);}catch(e){console.error('Portail TEST : publication illisible',e);fail('PUBLICATION_INVALIDE');return;}
     document.querySelector('h1').textContent=data.nom;
     document.querySelector('#campagne').textContent=data.campagne;
+    // Publication = photographie ; ne jamais présenter sa date comme une synchronisation en temps réel.
+    const etatPublication=situationPublication(data.datePublication);
+    const statut=document.querySelector('#statut-publication');
+    statut.textContent=etatPublication.ancienne
+      ? `${etatPublication.texte} — le responsable de l’enquête doit republier pour actualiser les réponses.`
+      : `${etatPublication.texte} — données figées à la dernière publication.`;
+    statut.classList.toggle('ancienne',etatPublication.ancienne);
+    // Accès rapides : seuls les liens déjà autorisés dans la publication sont exposés.
+    const liens=accesQuestionnaires(data.structures);
+    const liste=document.querySelector('#liste-questionnaires');liste.replaceChildren();
+    document.querySelector('#nombre-acces').textContent=`${liens.length} accès autorisé(s)`;
+    if(!liens.length){text(liste,'li','Aucun lien de questionnaire autorisé pour cet espace.','acces-vide');}
+    for(const item of liens){
+      const li=text(liste,'li','','acces-questionnaire');
+      const infos=text(li,'div','','acces-infos');text(infos,'strong',item.structure);
+      text(infos,'small',ETATS[item.etat]||'Suivi indisponible');
+      if(lienQuestionnaireValide(item.lien)){
+        const lien=document.createElement('a');lien.textContent='Ouvrir le questionnaire';lien.href=item.lien;
+        lien.target='_blank';lien.rel='noopener noreferrer';li.appendChild(lien);
+      } else {text(li,'span','Lien non conforme — contacter le responsable','acces-invalide');}
+    }
     const pilotage=calculerPilotage(data);
     const cards=document.querySelector('#indicateurs');cards.replaceChildren();
     for(const [label,value] of [['Structures',pilotage.total],['Pas commencé',pilotage.nonCommence],['En cours',pilotage.enCours],['Complété',pilotage.complete],['Réponses',pilotage.reponses],['Terminées',`${pilotage.pctTerminees} %`]]){
@@ -93,11 +115,12 @@ async function init(){
       tbody.replaceChildren();
       for(const row of lignesAffichees){const tr=text(tbody,'tr','');text(tr,'td',row.structure);const etatCell=text(tr,'td',ETATS[row.etat]);etatCell.className=`etat ${row.etat}`;text(tr,'td',row.reponses);
         const cell=text(tr,'td','');
-        if(row.lienQuestionnaire){const a=document.createElement('a');a.textContent='Ouvrir le questionnaire';a.href=row.lienQuestionnaire;a.target='_blank';a.rel='noopener noreferrer';cell.appendChild(a);}
+        if(row.lienQuestionnaire && lienQuestionnaireValide(row.lienQuestionnaire)){const a=document.createElement('a');a.textContent='Ouvrir le questionnaire';a.href=row.lienQuestionnaire;a.target='_blank';a.rel='noopener noreferrer';cell.appendChild(a);}
         else{text(cell,'span','Accès non activé');}
       }
       document.querySelector('#compteur').textContent=`${lignesAffichees.length} structure(s) affichée(s) sur ${data.structures.length}`;
     }
+    document.querySelector('#reset-filtres').addEventListener('click',()=>{document.querySelector('#recherche').value='';document.querySelector('#etat').value='tous';document.querySelector('#tri').value='nom';afficher();document.querySelector('#recherche').focus();});
     for(const id of ['recherche','etat','tri'])document.querySelector(`#${id}`).addEventListener(id==='recherche'?'input':'change',afficher);
     document.querySelector('#export-excel').addEventListener('click',()=>{
       try{

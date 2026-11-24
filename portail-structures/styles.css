@@ -20,3 +20,20 @@
 .liste-priorites{list-style:none;padding:0;margin:0}.priorite{padding:9px 0;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;border-top:1px solid #e1e8f1}
 .nom-priorite{font-weight:600}.detail-priorite{color:#536a80;font-size:.85rem}.priorite-vide{color:#68788a;font-size:.9rem}
 @media(prefers-reduced-motion:reduce){.segment{transition:none}}
+
+/* V4.4.10 — accès direct et information de fraîcheur du suivi */
+.acces-rapide{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
+.acces-rapide a{display:inline-block;padding:9px 12px;background:#eaf1f9;border-radius:8px;color:#174d7e;font-weight:650;text-decoration:none}
+.acces-rapide a:hover{text-decoration:underline}
+.acces-rapide a:focus-visible,.acces-questionnaire a:focus-visible,.reset-filtres:focus-visible{outline:3px solid #69a5e1;outline-offset:3px}
+.statut-publication{padding:12px 15px;border:1px solid #cbdceb;background:#f2f7fd;border-radius:9px;margin:14px 0;color:#345776}
+.statut-publication.ancienne{background:#fff8e9;border-color:#e6d4a7;color:#775410}
+.acces-questionnaires{border:1px solid #dce3ed;border-radius:10px;padding:16px;margin:16px 0;background:#fff}
+.acces-questionnaires .titre-ligne h2{margin:0}.compte-acces{font-size:.85rem;color:#536d8b}
+.liste-questionnaires{list-style:none;padding:0;margin:12px 0 0}
+.acces-questionnaire{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid #e2e8f1}
+.acces-infos{display:flex;flex-direction:column;gap:3px}.acces-infos small{color:#62758b}
+.acces-questionnaire a{padding:9px 12px;background:#254b70;color:#fff;border-radius:8px;text-decoration:none;font-weight:650}
+.acces-questionnaire a:hover{background:#1b3955}.acces-vide,.acces-invalide{color:#65768a}
+.reset-filtres{align-self:flex-end;border:1px solid #b8c7d8;background:#fff;border-radius:8px;padding:10px 12px;cursor:pointer;color:#254b70;font-weight:650}
+@media(max-width:540px){.acces-questionnaire a{width:100%;text-align:center}.reset-filtres{width:100%}}
