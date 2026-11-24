@@ -706,3 +706,66 @@ body[data-module="concepteur"] .td-canvas-preview .preview-data-table td {min-wi
 .gr-distribution-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;margin:7px 0;border:1px solid #e2e8f0;border-radius:8px}
 .gr-distribution-name{flex:1;min-width:180px}
 @media(max-width:650px){.gr-space-actions>button,.gr-primary-actions>button{flex:1}.gr-space-create>.field{width:100%}.gr-space-detail{font-size:13px}}
+
+
+/* V4.4.13 TEST — Espacement ciblé des formulaires « Espaces » et « Diffusion ». */
+/* Empêcher le champ de création d'occuper toute la ligne et éloigner le bouton. */
+.gr-space-create {align-items:flex-end;justify-content:flex-start;gap:12px 14px}
+.gr-space-create > .field {
+  flex:0 1 320px;
+  width:min(100%,320px);
+  max-width:320px;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:7px;
+}
+.gr-space-create > .field input {
+  display:block;
+  width:100%;
+  min-width:0;
+  margin:0;
+  min-height:38px;
+}
+.gr-space-create > #space-create-v440 {
+  flex:0 0 auto;
+  align-self:flex-end;
+  margin:0;
+  min-height:38px;
+  padding-inline:14px;
+}
+/* Champs de recherche et filtre alignés, sans libellés collés. */
+.gr-distribution-filters {
+  display:flex;
+  align-items:flex-end;
+  justify-content:flex-start;
+  flex-wrap:wrap;
+  gap:12px 20px;
+  margin:14px 0 18px;
+}
+.gr-distribution-filters > .field {
+  display:flex;
+  flex:0 1 290px;
+  flex-direction:column;
+  align-items:stretch;
+  gap:7px;
+  min-width:0;
+  margin:0;
+}
+.gr-distribution-filters > .field:nth-child(2) {flex:0 1 175px}
+.gr-distribution-filters input,
+.gr-distribution-filters select {
+  width:100%;
+  min-height:38px;
+  min-width:0;
+  margin:0;
+}
+.gr-distribution-top {gap:10px 14px}
+.gr-distribution-top > #space-distribution-count-v441 {margin:0 0 0 4px}
+@media(max-width:520px) {
+  .gr-space-create > .field {flex:1 1 100%;max-width:none;width:100%}
+  .gr-space-create > #space-create-v440 {align-self:flex-start}
+  .gr-distribution-filters > .field,
+  .gr-distribution-filters > .field:nth-child(2) {flex:1 1 100%;width:100%}
+}

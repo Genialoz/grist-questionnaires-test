@@ -1516,7 +1516,7 @@ async function renderSpaceDistribution(group){
  host.innerHTML=`<div class="editor-section"><h3>Diffusion des liens — ${esc(campaignName(campaigns[0]||{}))}</h3>
  <p class="hint">Un lien par espace et un lien direct par structure non rattachée. Les liens internes aux espaces restent accessibles uniquement depuis chaque portail.</p>
  <div class="gr-distribution-top"><button type="button" class="secondary-btn gr-action-primary" id="space-distribution-copy-all-v441">Copier tous les liens de diffusion</button><button type="button" class="secondary-btn" id="space-distribution-export-targeted-v441">Exporter la diffusion (.xlsx)</button><span class="hint" id="space-distribution-count-v441" aria-live="polite"></span></div>
- <div class="form-row"><label class="field" style="flex:1">Rechercher un destinataire<input id="space-distribution-search-v441" placeholder="Structure ou service…" autocomplete="off"></label>
+ <div class="form-row gr-distribution-filters"><label class="field">Rechercher un destinataire<input id="space-distribution-search-v441" placeholder="Structure ou service…" autocomplete="off"></label>
  <label class="field">Afficher<select id="space-distribution-filter-v441"><option value="all">Tous</option><option value="space">Espaces</option><option value="direct">Liens directs</option></select></label></div>
  <div id="space-distribution-rows-v441"></div>
  <div class="form-actions"><button class="secondary-btn" type="button" id="space-distribution-export-v441">Export confidentiel de tous les liens individuels (.xlsx) — administrateur</button><button class="secondary-btn" type="button" id="space-distribution-close-v441">Fermer</button></div>
