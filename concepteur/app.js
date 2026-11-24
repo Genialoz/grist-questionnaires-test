@@ -5,6 +5,7 @@ import {verifierDiffusion} from "./diffusion-regles.mjs";
 import {resumeEspace} from "./portail-suivi.mjs";
 import {genererJetonPortail,etatAccesPortail} from "./portail-acces.mjs";
 import {creerPublicationSuivi} from "./portail-publication.mjs";
+import {PORTAIL_LINK_COLUMN,PORTAIL_LINK_FORMULA,verifierLienPortailGrist} from "./portail-liens.mjs";
 import {rowsFromTable,sortByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 // Fetch persisted answers again before destructive definition batches, including imports.
@@ -1223,6 +1224,31 @@ async function ensureSpacePublicationColumn(){
   await applyDesignerActions([["AddColumn",SPACE_TABLE,"Suivi_public_JSON",{type:"Text"}]]);
  }
 }
+// Ne jamais reconstituer l'URL manuellement : seule SELF_HYPERLINK() produit ici
+// une URL de clé de lien acceptée par Grist, avec le mode singlePage ajouté.
+async function ensureSpaceLinkColumn(){
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw,PORTAIL_LINK_COLUMN)){
+  await applyDesignerActions([["AddColumn",SPACE_TABLE,PORTAIL_LINK_COLUMN,{type:"Text",isFormula:true,formula:PORTAIL_LINK_FORMULA}]]);
+ }
+}
+async function spacePublishedLink(space){
+ if(!space?.Jeton_portail)throw new Error("Préparez d'abord le jeton de cet espace.");
+ if(!space.Suivi_public_JSON)throw new Error("Publiez d'abord le suivi de cet espace.");
+ if(!active(space))throw new Error("Cet espace est désactivé.");
+ await ensureSpaceLinkColumn();
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw,PORTAIL_LINK_COLUMN))throw new Error("La colonne formule Lien_portail est introuvable après création.");
+ const row=rowsFromTable(raw).find(r=>String(r.id)===String(space.id));
+ if(!row)throw new Error("L'espace n'est plus accessible. Actualisez le Concepteur.");
+ if(String(row.Jeton_portail||"")!==String(space.Jeton_portail))throw new Error("Le jeton a changé : rechargez les espaces.");
+ return verifierLienPortailGrist(row[PORTAIL_LINK_COLUMN],row.Jeton_portail);
+}
+async function copySpaceLink(space){
+ const url=await spacePublishedLink(space);
+ await navigator.clipboard.writeText(url);
+ return url;
+}
 async function loadSpaceTables(){
  const out={};
  for(const name of [SPACE_TABLE,SPACE_MEMBERS]){
@@ -1258,8 +1284,8 @@ async function renderSpaceManager(group){
   const selected=spaceMemberRows(space,all),own=new Map(selected.map(m=>[memberRowId(m),m]));
   return `<div class="campaign-card" data-space-card="${space.id}">
     <div class="campaign-card-head"><strong>${esc(spaceName(space))}</strong><span class="badge">${selected.length} structure(s)</span></div>
-    <div class="field-help">${esc(etatAccesPortail(space))} — lien externe à activer uniquement après tests ACL.</div>
-    <div class="form-row"><button type="button" class="secondary-btn" data-space-prepare-access="${space.id}">Préparer un jeton d'accès</button>${space.Jeton_portail?`<button type="button" class="secondary-btn" data-space-revoke-access="${space.id}">Révoquer le jeton</button>`:""}</div>
+    <div class="field-help">${esc(etatAccesPortail(space))} · ${space.Jeton_portail?(space.Suivi_public_JSON?"Suivi publié · lien copiable pour les tests d’accès":"Suivi non publié"):"Aucun jeton"} · Lien TEST en page unique.</div>
+    <div class="form-row"><button type="button" class="secondary-btn" data-space-prepare-access="${space.id}">Préparer un jeton d'accès</button>${space.Jeton_portail?`<button type="button" class="secondary-btn" data-space-revoke-access="${space.id}">Révoquer le jeton</button>`:""}${space.Jeton_portail&&space.Suivi_public_JSON&&active(space)?`<button type="button" class="secondary-btn" data-space-copy-link="${space.id}">Copier le lien de l’espace</button>`:""}</div>
     <div class="form-row"><label class="field" style="flex:1">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-preview="${space.id}">Prévisualiser le suivi</button><button type="button" class="secondary-btn" data-space-publish="${space.id}">Publier le suivi (TEST)</button><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
     <div class="field-help">Associer des destinataires existants (les codes et libellés sont conservés)</div>
     <div class="campaign-structures" style="max-height:230px;overflow:auto">
@@ -1270,8 +1296,17 @@ async function renderSpaceManager(group){
     <button type="button" class="secondary-btn" data-space-save="${space.id}">Enregistrer les rattachements</button>
     </div>`
  }).join(""):'<p class="hint">Aucun espace créé pour cette campagne.</p>'}`;
+ // Copie du lien issu de la colonne formule native, jamais d'une URL recomposée en JS.
+ host.querySelectorAll("[data-space-copy-link]").forEach(button=>button.onclick=async()=>{
+  try{
+   const space=spaces.find(e=>String(e.id)===String(button.dataset.spaceCopyLink));
+   if(!space)throw new Error("Espace introuvable.");
+   await copySpaceLink(space);
+   status(`Lien TEST de « ${spaceName(space)} » copié (singlePage). Testez-le en navigation privée.`,false,true);
+  }catch(err){status(`Copie du lien : ${err?.message||err}`,true,true)}
+ });
  // Préparation administrative d'un identifiant aléatoire distinct des jetons de saisie.
- // Aucun lien ne sera construit ou communiqué ici, car les ACL de lecture ne sont pas encore validées.
+ // La création d’un jeton n’ouvre aucun accès en soi ; l’ACL contrôle chaque lecture.
  host.querySelectorAll("[data-space-prepare-access]").forEach(b=>b.onclick=async()=>{
   try{
    const space=spaces.find(e=>String(e.id)===String(b.dataset.spacePrepareAccess));
@@ -1281,7 +1316,7 @@ async function renderSpaceManager(group){
    await ensureSpaceAccessColumn();
    await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:token, ...(Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")?{Suivi_public_JSON:""}:{})}]]);
    await verifySpaceColumnAndValue(space.id,"Jeton_portail",token);
-   status("Jeton enregistré et vérifié dans TEST. Aucun accès externe n'est ouvert.",false,true);
+   status("Jeton enregistré et vérifié dans TEST. Publiez le suivi, puis testez le nouveau lien.",false,true);
    await renderSpaceManager(group);
   }catch(err){status(`Préparation d'accès : ${err?.message||err}`,true,true)}
  });
@@ -1310,7 +1345,7 @@ async function renderSpaceManager(group){
    await ensureSpacePublicationColumn();
    await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Suivi_public_JSON:snapshot}]]);
    await verifySpaceColumnAndValue(space.id,"Suivi_public_JSON",snapshot);
-   status("Synthèse enregistrée et vérifiée dans TEST. Ne partagez aucun lien avant validation des ACL.",false,true);
+   status("Synthèse enregistrée et vérifiée dans TEST. Le lien peut être copié pour des tests d’accès.",false,true);
    await renderSpaceManager(group);
   }catch(err){status(`Publication : ${err?.message||err}`,true,true)}
  });
@@ -1390,8 +1425,7 @@ function initSpacesCampaignButtons(){
  });
 }
 
-// Portail V4.4.1 TEST — outil interne de préparation des diffusions.
-// Les liens d'espace ne sont PAS générés avant sécurisation du portail et de ses ACL.
+// Portail V4.4.5 TEST — diffusion administrative des liens, créés par formule native Grist.
 function distributionData(group,all){
  const campaigns=spaceCampaignRows(group),spaces=spaceRowsFor(group,all);
  const members=spaces.flatMap(space=>spaceMemberRows(space,all));
@@ -1410,7 +1444,7 @@ async function renderSpaceDistribution(group){
  const ungrouped=campaigns.filter(c=>!indexed.has(String(c.id)));
  const grouped=campaigns.filter(c=>indexed.has(String(c.id)));
  host.innerHTML=`<div class="editor-section"><h3>Diffusion des liens — ${esc(campaignName(campaigns[0]||{}))}</h3>
- <p class="hint">Préparation interne TEST. Les espaces n'ont pas encore de lien d'accès sécurisé. Ne diffusez pas de lien d'espace à ce stade.</p>
+ <p class="hint">Liens d’espace TEST créés par SELF_HYPERLINK() et ouverts en singlePage. Vérifier les droits de chaque espace en navigation privée avant diffusion.</p>
  <div class="form-row"><label class="field" style="flex:1">Rechercher un destinataire<input id="space-distribution-search-v441" placeholder="Structure ou service…" autocomplete="off"></label>
  <label class="field">Afficher<select id="space-distribution-filter-v441"><option value="all">Tous</option><option value="space">Espaces</option><option value="direct">Liens directs</option></select></label></div>
  <div id="space-distribution-rows-v441"></div>
@@ -1421,7 +1455,15 @@ async function renderSpaceDistribution(group){
   const rows=[...spaces.map(space=>({type:"space",name:spaceName(space),detail:`${spaceMemberRows(space,all).length} destinataire(s)`,space})),...ungrouped.map(c=>({type:"direct",name:campaignParticipantLabel(c),detail:campaignParticipantValue(c)||"",c}))];
   const show=rows.filter(r=>(filter==="all"||r.type===filter)&&`${r.name} ${r.detail}`.toLocaleLowerCase().includes(search));
   const target=$("#space-distribution-rows-v441");if(!target)return;
-  target.innerHTML=show.map(r=>`<div class="campaign-link-row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:9px 0;padding:9px;border:1px solid #ddd;border-radius:8px"><div style="flex:1;min-width:180px"><strong>${esc(r.name)}</strong><div class="hint">${r.type==="space"?"Espace · ":"Lien direct · "}${esc(r.detail)}</div></div>${r.type==="space"?'<span class="hint">Lien d’espace non disponible — sécurité en préparation</span>':`<button type="button" class="secondary-btn" data-distribution-copy-v441="${esc(String(r.c.id))}">Copier le lien</button>`}</div>`).join("")||'<p class="hint">Aucun destinataire.</p>';
+  target.innerHTML=show.map(r=>`<div class="campaign-link-row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:9px 0;padding:9px;border:1px solid #ddd;border-radius:8px"><div style="flex:1;min-width:180px"><strong>${esc(r.name)}</strong><div class="hint">${r.type==="space"?"Espace · ":"Lien direct · "}${esc(r.detail)}</div></div>${r.type==="space"?(r.space.Jeton_portail&&r.space.Suivi_public_JSON&&active(r.space)?`<button type="button" class="secondary-btn" data-distribution-copy-space="${esc(String(r.space.id))}">Copier le lien espace</button>`:'<span class="hint">Préparer le jeton et publier le suivi</span>'):`<button type="button" class="secondary-btn" data-distribution-copy-v441="${esc(String(r.c.id))}">Copier le lien</button>`}</div>`).join("")||'<p class="hint">Aucun destinataire.</p>';
+  target.querySelectorAll("[data-distribution-copy-space]").forEach(b=>b.onclick=async()=>{
+   try{
+    const space=spaces.find(s=>String(s.id)===String(b.dataset.distributionCopySpace));
+    if(!space)throw new Error("Espace introuvable.");
+    await copySpaceLink(space);
+    status(`Lien TEST de « ${spaceName(space)} » copié (singlePage).`,false,true);
+   }catch(e){status(`Copie de l'espace : ${e?.message||e}`,true,true)}
+  });
   target.querySelectorAll("[data-distribution-copy-v441]").forEach(b=>b.onclick=async()=>{
    const c=ungrouped.find(x=>String(x.id)===b.dataset.distributionCopyV441),url=c?campaignAccessUrl(c):"";
    if(!url){status("Le lien de ce destinataire est indisponible.",true,true);return}
