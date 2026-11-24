@@ -769,3 +769,70 @@ body[data-module="concepteur"] .td-canvas-preview .preview-data-table td {min-wi
   .gr-distribution-filters > .field,
   .gr-distribution-filters > .field:nth-child(2) {flex:1 1 100%;width:100%}
 }
+
+
+/* V4.4.14 TEST — En-tête de campagne : identité/statuts groupés, action d'état à droite. */
+.campaign-card .gr-campaign-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px 20px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.campaign-card .gr-campaign-identity{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:7px;
+  flex:1 1 300px;
+  min-width:0;
+}
+.campaign-card .gr-campaign-name{
+  display:block;
+  font-size:15px;
+  line-height:1.45;
+  overflow-wrap:anywhere;
+}
+.campaign-card .gr-campaign-badges{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.campaign-card .gr-campaign-status-action{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  flex:0 0 auto;
+  margin-left:auto;
+}
+.campaign-card .gr-campaign-actions{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px 16px;
+  flex-wrap:wrap;
+  padding:10px 0;
+  margin:0 0 9px;
+  border-top:1px solid #e9edf4;
+}
+.campaign-card .gr-primary-actions{
+  gap:8px;
+  flex:1 1 420px;
+  min-width:0;
+}
+.campaign-card .gr-more-actions{margin-left:auto;flex:0 0 auto}
+@media(max-width:760px){
+  /* Neutralise l'ancienne disposition en colonne pour les seules cartes de campagne. */
+  .campaign-card .gr-campaign-head{flex-direction:row;align-items:flex-start}
+  .campaign-card .gr-campaign-identity{flex:1 1 170px}
+  .campaign-card .gr-campaign-status-action{margin-left:auto}
+  .campaign-card .gr-primary-actions{flex:1 1 100%}
+  .campaign-card .gr-more-actions{margin-left:0}
+}
+@media(max-width:420px){
+  .campaign-card .gr-campaign-status-action{margin-left:0}
+  .campaign-card .gr-campaign-actions{align-items:stretch}
+  .campaign-card .gr-more-actions{width:100%}
+}
