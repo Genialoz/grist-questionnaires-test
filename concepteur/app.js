@@ -6,6 +6,7 @@ import {resumeEspace} from "./portail-suivi.mjs";
 import {genererJetonPortail,etatAccesPortail} from "./portail-acces.mjs";
 import {creerPublicationSuivi} from "./portail-publication.mjs";
 import {PORTAIL_LINK_COLUMN,PORTAIL_LINK_FORMULA,verifierLienPortailGrist} from "./portail-liens.mjs";
+import {verifierPublicationCourante,doitInvaliderPublication} from "./portail-coherence.mjs";
 import {rowsFromTable,sortByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 // Fetch persisted answers again before destructive definition batches, including imports.
@@ -1285,6 +1286,7 @@ async function renderSpaceManager(group){
   return `<div class="campaign-card" data-space-card="${space.id}">
     <div class="campaign-card-head"><strong>${esc(spaceName(space))}</strong><span class="badge">${selected.length} structure(s)</span></div>
     <div class="field-help">${esc(etatAccesPortail(space))} · ${space.Jeton_portail?(space.Suivi_public_JSON?"Suivi publié · lien copiable pour les tests d’accès":"Suivi non publié"):"Aucun jeton"} · Lien TEST en page unique.</div>
+    <div class="form-row"><button type="button" class="secondary-btn" data-space-check-publication="${space.id}">Vérifier si le suivi est à jour</button><span class="hint" data-space-publication-result="${space.id}" aria-live="polite">Contrôle à la demande, sans écriture.</span></div>
     <div class="form-row"><button type="button" class="secondary-btn" data-space-prepare-access="${space.id}">Préparer un jeton d'accès</button>${space.Jeton_portail?`<button type="button" class="secondary-btn" data-space-revoke-access="${space.id}">Révoquer le jeton</button>`:""}${space.Jeton_portail&&space.Suivi_public_JSON&&active(space)?`<button type="button" class="secondary-btn" data-space-copy-link="${space.id}">Copier le lien de l’espace</button>`:""}</div>
     <div class="form-row"><label class="field" style="flex:1">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-preview="${space.id}">Prévisualiser le suivi</button><button type="button" class="secondary-btn" data-space-publish="${space.id}">Publier le suivi (TEST)</button><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
     <div class="field-help">Associer des destinataires existants (les codes et libellés sont conservés)</div>
@@ -1304,6 +1306,28 @@ async function renderSpaceManager(group){
    await copySpaceLink(space);
    status(`Lien TEST de « ${spaceName(space)} » copié (singlePage). Testez-le en navigation privée.`,false,true);
   }catch(err){status(`Copie du lien : ${err?.message||err}`,true,true)}
+ });
+ // Contrôle de fraîcheur à la demande : aucune écriture, aucun lien de réponse exposé.
+ host.querySelectorAll("[data-space-check-publication]").forEach(button=>button.onclick=async()=>{
+  const id=String(button.dataset.spaceCheckPublication||"");
+  const space=spaces.find(e=>String(e.id)===id);
+  const result=host.querySelector(`[data-space-publication-result="${id}"]`);
+  if(!space||!result)return;
+  button.disabled=true;result.textContent="Vérification en cours…";
+  try{
+   const fresh=await loadSpaceTables();
+   const live=spaceRowsFor(group,fresh).find(e=>String(e.id)===id);
+   if(!live)throw new Error("L'espace n'est plus accessible.");
+   const responses=rowsFromTable(await grist.docApi.fetchTable("REPONSES"));
+   const byId=new Map(spaceCampaignRows(group).map(c=>[String(c.id),c]));
+   const entries=spaceMemberRows(live,fresh).map(m=>({member:m,campaign:byId.get(memberRowId(m))}));
+   const summary=resumeEspace(entries,responses,responseMatchesCampaign,resultStatus);
+   const snapshot=creerPublicationSuivi(summary,spaceName(live),campaignName(campaigns[0]));
+   const check=verifierPublicationCourante(live.Suivi_public_JSON,snapshot);
+   result.textContent=check.message;
+   result.dataset.etat=check.etat;
+  }catch(error){result.textContent=`Contrôle impossible : ${error?.message||error}`;result.dataset.etat="erreur"}
+  finally{button.disabled=false}
  });
  // Préparation administrative d'un identifiant aléatoire distinct des jetons de saisie.
  // La création d’un jeton n’ouvre aucun accès en soi ; l’ACL contrôle chaque lecture.
@@ -1383,7 +1407,11 @@ async function renderSpaceManager(group){
   const space=spaces.find(e=>String(e.id)===b.dataset.spaceRename),name=String(host.querySelector(`[data-space-title="${b.dataset.spaceRename}"]`)?.value||"").trim();
   if(!space||!name)throw new Error("Nom d'espace invalide.");
   if(spaces.some(e=>e.id!==space.id&&spaceName(e).toLocaleLowerCase()===name.toLocaleLowerCase()))throw new Error("Nom déjà utilisé.");
-  await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Nom:name}]]);
+  // Le nom figure dans le JSON public : l'ancien instantané doit être invalidé.
+  const changes={Nom:name};
+  if(name!==spaceName(space)&&Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON"))changes.Suivi_public_JSON="";
+  await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,changes]]);
+  if(Object.prototype.hasOwnProperty.call(changes,"Suivi_public_JSON"))await verifySpaceColumnAndValue(space.id,"Suivi_public_JSON","");
  }));
  host.querySelectorAll("[data-space-remove]").forEach(b=>b.onclick=()=>run(async()=>{
   const space=spaces.find(e=>String(e.id)===b.dataset.spaceRemove);if(!space)return;
@@ -1411,8 +1439,19 @@ async function renderSpaceManager(group){
    if(existing){if(isTrue(existing.Peut_modifier)!==edit)actions.push(["UpdateRecord",SPACE_MEMBERS,existing.id,{Peut_modifier:edit}]);}
    else actions.push(["AddRecord",SPACE_MEMBERS,null,{Espace_Id:space.id,Campagne_Lien_Id:Number(id),Peut_modifier:false}]);
   }
+  // Ajouter ou retirer un membre change le périmètre visible du portail.
+  // Invalidation dans le même lot pour éviter de laisser un ancien suivi accessible.
+  const perimetreChange=doitInvaliderPublication(actions,SPACE_MEMBERS);
+  if(perimetreChange && Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")){
+   actions.push(["UpdateRecord",SPACE_TABLE,space.id,{Suivi_public_JSON:""}]);
+  }
   if(actions.length)await applyDesignerActions(actions);
-  status("Rattachements enregistrés dans TEST. Les permissions de modification ne sont pas encore activées.",false,true);
+  if(perimetreChange && Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")){
+   await verifySpaceColumnAndValue(space.id,"Suivi_public_JSON","");
+  }
+  status(perimetreChange
+   ? "Rattachements enregistrés. Ancien suivi désactivé : republiez le suivi de l'espace avant de recopier son lien."
+   : "Rattachements enregistrés dans TEST. Les permissions de modification ne sont pas encore activées.",false,true);
  }));
 }
 function initSpacesCampaignButtons(){
