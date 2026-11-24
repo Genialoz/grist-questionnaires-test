@@ -37,3 +37,29 @@
 .acces-questionnaire a:hover{background:#1b3955}.acces-vide,.acces-invalide{color:#65768a}
 .reset-filtres{align-self:flex-end;border:1px solid #b8c7d8;background:#fff;border-radius:8px;padding:10px 12px;cursor:pointer;color:#254b70;font-weight:650}
 @media(max-width:540px){.acces-questionnaire a{width:100%;text-align:center}.reset-filtres{width:100%}}
+
+/* V4.4.12 TEST — Portail épuré : un seul pilotage et un seul point d'accès aux questionnaires. */
+.container{max-width:1050px;margin:24px auto}
+header{padding:20px 24px;margin-bottom:0;border-bottom:0;border-radius:14px 14px 0 0}
+header h1{margin-bottom:0}
+header #message:not(.erreur){font-size:.85rem;margin:5px 0 0}
+#contenu{border-top:0;border-radius:0 0 14px 14px;padding-top:6px}
+#contenu>.sous-titre{margin:0 0 12px;font-size:1rem}
+#contenu>.statut-publication{margin:0 0 24px;padding:9px 12px;font-size:.88rem}
+#contenu>.bloc-pilotage,#contenu>.bloc-suivi{padding:0;border:0;border-radius:0;margin:0 0 24px;background:transparent}
+.bloc-pilotage h2,.bloc-suivi h2{margin:0 0 14px}
+.bloc-pilotage .indicateurs{grid-template-columns:repeat(5,minmax(0,1fr))}
+.bloc-pilotage .indicateur{padding:13px}
+.bloc-pilotage .indicateur strong{font-size:1.45rem}
+.bloc-pilotage .repartition{margin-top:19px}
+.bloc-suivi{border-top:1px solid #e0e6ee!important;padding-top:20px!important}
+.bloc-suivi .titre-ligne{margin:0 0 12px}
+.bloc-suivi .titre-ligne h2{margin:0 0 4px}
+.bloc-suivi .note-acces{margin:0;max-width:620px;font-size:.86rem}
+.bloc-suivi .outils{margin:14px 0 10px}
+.bloc-suivi #compteur{margin:4px 0 10px}
+.bloc-suivi .reset-filtres{white-space:nowrap}
+.bloc-suivi td:last-child a{font-weight:600}
+.fin-portail{font-size:.82rem;border-top:1px solid #e8edf3;padding-top:12px}
+@media(max-width:680px){.bloc-pilotage .indicateurs{grid-template-columns:repeat(2,minmax(0,1fr))}.bloc-pilotage .indicateur:last-child{grid-column:1/-1}}
+@media(max-width:540px){header{padding:16px}#contenu{padding:16px}.bloc-suivi .titre-ligne button{width:100%}}

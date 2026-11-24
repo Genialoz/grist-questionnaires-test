@@ -3,8 +3,8 @@
 import {lirePublicationSuivi} from '../concepteur/portail-publication.mjs';
 import {ETATS, filtrerStructures, calculerPilotage} from './portail-pilotage.mjs';
 import {genererExcelPortail,nomFichierExcel} from './portail-excel.mjs';
-import {syntheseSelection, prioritesSuivi} from './portail-synthese.mjs';
-import {accesQuestionnaires,situationPublication,lienQuestionnaireValide} from './portail-accueil.mjs';
+import {syntheseSelection} from './portail-synthese.mjs';
+import {situationPublication,lienQuestionnaireValide} from './portail-accueil.mjs';
 const message=document.querySelector('#message'),contenu=document.querySelector('#contenu');
 function text(parent,tag,content,className=''){const node=document.createElement(tag);node.textContent=String(content);if(className)node.className=className;parent.appendChild(node);return node;}
 function fail(code='ACCES_REFUSE'){
@@ -56,27 +56,11 @@ async function init(){
       ? `${etatPublication.texte} — le responsable de l’enquête doit republier pour actualiser les réponses.`
       : `${etatPublication.texte} — données figées à la dernière publication.`;
     statut.classList.toggle('ancienne',etatPublication.ancienne);
-    // Accès rapides : seuls les liens déjà autorisés dans la publication sont exposés.
-    const liens=accesQuestionnaires(data.structures);
-    const liste=document.querySelector('#liste-questionnaires');liste.replaceChildren();
-    document.querySelector('#nombre-acces').textContent=`${liens.length} accès autorisé(s)`;
-    if(!liens.length){text(liste,'li','Aucun lien de questionnaire autorisé pour cet espace.','acces-vide');}
-    for(const item of liens){
-      const li=text(liste,'li','','acces-questionnaire');
-      const infos=text(li,'div','','acces-infos');text(infos,'strong',item.structure);
-      text(infos,'small',ETATS[item.etat]||'Suivi indisponible');
-      if(lienQuestionnaireValide(item.lien)){
-        const lien=document.createElement('a');lien.textContent='Ouvrir le questionnaire';lien.href=item.lien;
-        lien.target='_blank';lien.rel='noopener noreferrer';li.appendChild(lien);
-      } else {text(li,'span','Lien non conforme — contacter le responsable','acces-invalide');}
-    }
     const pilotage=calculerPilotage(data);
     const cards=document.querySelector('#indicateurs');cards.replaceChildren();
-    for(const [label,value] of [['Structures',pilotage.total],['Pas commencé',pilotage.nonCommence],['En cours',pilotage.enCours],['Complété',pilotage.complete],['Réponses',pilotage.reponses],['Terminées',`${pilotage.pctTerminees} %`]]){
+    for(const [label,value] of [['Structures',pilotage.total],['Pas commencé',pilotage.nonCommence],['En cours',pilotage.enCours],['Complété',pilotage.complete],['Réponses',pilotage.reponses]]){
       const card=text(cards,'div','','indicateur');text(card,'strong',value);text(card,'span',label);
     }
-    document.querySelector('#pct-demarrage').textContent=`${pilotage.pctDemarrees} %`;
-    document.querySelector('#barre-demarrage').style.width=`${pilotage.pctDemarrees}%`;
     function dessinerRepartition(cible, stats){
       cible.replaceChildren();
       const pourcentages=stats.series.map(s=>s.nombre);
@@ -99,19 +83,6 @@ async function init(){
     function afficher(){
       try{lignesAffichees=filtrerStructures(data.structures,{recherche:document.querySelector('#recherche').value,etat:document.querySelector('#etat').value,ordre:document.querySelector('#tri').value});}
       catch(e){console.error('Portail : filtre invalide',e);return;}
-      const statsFiltre=syntheseSelection(data,lignesAffichees);
-      const resume=document.querySelector('#resume-filtre');resume.replaceChildren();
-      for(const [libelle,valeur] of [['Structures affichées',statsFiltre.total],['Ont commencé',`${statsFiltre.pctDemarrees} %`],['Terminées',`${statsFiltre.pctTerminees} %`],['Réponses enregistrées',statsFiltre.reponses]]){
-        const item=text(resume,'div','','mini-indicateur');text(item,'strong',valeur);text(item,'span',libelle);
-      }
-      dessinerRepartition(document.querySelector('#repartition-filtre'),statsFiltre);
-      const priorites=document.querySelector('#liste-priorites');priorites.replaceChildren();
-      const aSuivre=prioritesSuivi(lignesAffichees);
-      if(!aSuivre.length){text(priorites,'li',lignesAffichees.length?'Aucune structure en attente dans la sélection.':'Aucune structure dans la sélection.','priorite-vide');}
-      for(const priorite of aSuivre){
-        const li=text(priorites,'li','','priorite');text(li,'span',priorite.structure,'nom-priorite');
-        text(li,'span',ETATS[priorite.etat]+` · ${priorite.reponses} réponse(s)`,'detail-priorite');
-      }
       tbody.replaceChildren();
       for(const row of lignesAffichees){const tr=text(tbody,'tr','');text(tr,'td',row.structure);const etatCell=text(tr,'td',ETATS[row.etat]);etatCell.className=`etat ${row.etat}`;text(tr,'td',row.reponses);
         const cell=text(tr,'td','');
@@ -129,7 +100,7 @@ async function init(){
       }catch(e){console.error('Export Excel refusé',e);message.textContent='Impossible de générer le fichier Excel : '+e.message;}
     });
     afficher();
-    document.querySelector('#actualisation').textContent=`Suivi actualisé le ${new Date(data.datePublication).toLocaleString('fr-FR')}. Actualisation manuelle depuis le Concepteur.`;
+    document.querySelector('#actualisation').textContent=`Suivi publié le ${new Date(data.datePublication).toLocaleString('fr-FR')}. Actualisation manuelle depuis le Concepteur. Les exports Excel ne contiennent aucun lien de saisie.`;
     message.textContent='Accès autorisé — suivi publié';contenu.hidden=false;
   }catch(e){console.error('Portail TEST : erreur inattendue',e);fail();}
 }
