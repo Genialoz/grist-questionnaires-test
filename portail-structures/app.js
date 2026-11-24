@@ -50,7 +50,11 @@ async function init(){
       const card=text(cards,'div','','indicateur');text(card,'strong',value);text(card,'span',label);
     }
     const tbody=document.querySelector('#lignes');tbody.replaceChildren();
-    for(const row of data.structures){const tr=text(tbody,'tr','');text(tr,'td',row.structure);text(tr,'td',({'not-started':'Pas commencé','in-progress':'En cours','completed':'Complété'})[row.etat]);text(tr,'td',row.reponses);}
+    for(const row of data.structures){const tr=text(tbody,'tr','');text(tr,'td',row.structure);text(tr,'td',({'not-started':'Pas commencé','in-progress':'En cours','completed':'Complété'})[row.etat]);text(tr,'td',row.reponses);
+      const cell=text(tr,'td','');
+      if(row.lienQuestionnaire){const a=document.createElement('a');a.textContent='Ouvrir le questionnaire';a.href=row.lienQuestionnaire;a.target='_blank';a.rel='noopener noreferrer';cell.appendChild(a);}
+      else{text(cell,'span','Accès non activé');}
+    }
     document.querySelector('#actualisation').textContent=`Suivi actualisé le ${new Date(data.datePublication).toLocaleString('fr-FR')}. Actualisation manuelle depuis le Concepteur.`;
     message.textContent='Accès autorisé — suivi publié';contenu.hidden=false;
   }catch(e){console.error('Portail TEST : erreur inattendue',e);fail();}
