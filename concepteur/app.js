@@ -2,6 +2,7 @@ import {initDesignerUI, enhanceInspector, questionPreview, previewDraftLabels, e
 import {initPeriodManager} from "./periodes.js";
 import {verifierRattachements} from "./espaces-regles.mjs";
 import {verifierDiffusion} from "./diffusion-regles.mjs";
+import {resumeEspace} from "./portail-suivi.mjs";
 import {rowsFromTable,sortByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 // Fetch persisted answers again before destructive definition batches, including imports.
@@ -1229,7 +1230,7 @@ async function renderSpaceManager(group){
   const selected=spaceMemberRows(space,all),own=new Map(selected.map(m=>[memberRowId(m),m]));
   return `<div class="campaign-card" data-space-card="${space.id}">
     <div class="campaign-card-head"><strong>${esc(spaceName(space))}</strong><span class="badge">${selected.length} structure(s)</span></div>
-    <div class="form-row"><label class="field" style="flex:1">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
+    <div class="form-row"><label class="field" style="flex:1">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-preview="${space.id}">Prévisualiser le suivi</button><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
     <div class="field-help">Associer des destinataires existants (les codes et libellés sont conservés)</div>
     <div class="campaign-structures" style="max-height:230px;overflow:auto">
     ${campaigns.map(c=>{
@@ -1239,6 +1240,30 @@ async function renderSpaceManager(group){
     <button type="button" class="secondary-btn" data-space-save="${space.id}">Enregistrer les rattachements</button>
     </div>`
  }).join(""):'<p class="hint">Aucun espace créé pour cette campagne.</p>'}`;
+ // Vue exclusivement interne, sans transmission de jeton ni lien vers une réponse.
+ host.querySelectorAll("[data-space-preview]").forEach(button=>button.onclick=async()=>{
+  const id=String(button.dataset.spacePreview||"");
+  const space=spaces.find(e=>String(e.id)===id);
+  if(!space)return;
+  let box=host.querySelector("[data-space-preview-result]");
+  if(!box){box=document.createElement("div");box.dataset.spacePreviewResult="1";box.className="editor-section";host.appendChild(box)}
+  box.innerHTML='<p class="hint">Chargement du suivi interne…</p>';
+  try{
+   // Contrairement à fetchOptionalTable, l'échec de lecture ne doit jamais produire un faux statut « Pas commencé ».
+   const raw=await grist.docApi.fetchTable("REPONSES");
+   const responses=rowsFromTable(raw);
+   const byId=new Map(campaigns.map(c=>[String(c.id),c]));
+   const entries=spaceMemberRows(space,all).map(m=>({member:m,campaign:byId.get(memberRowId(m))}));
+   const summary=resumeEspace(entries,responses,responseMatchesCampaign,resultStatus);
+   box.innerHTML=`<div class="campaign-card"><div class="campaign-card-head"><strong>Suivi interne — ${esc(spaceName(space))}</strong><span class="badge">${summary.total} structure(s)</span></div>
+    <p class="hint">Prévisualisation réservée au Concepteur TEST. Aucun lien d'espace public, aucun droit supplémentaire et aucun accès aux réponses détaillées.</p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin:12px 0"><strong>Pas commencé : ${summary.notStarted}</strong><strong>En cours : ${summary.inProgress}</strong><strong>Complété : ${summary.completed}</strong></div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Structure</th><th>État</th><th>Réponses enregistrées</th><th>Modification future</th></tr></thead><tbody>${summary.items.map(item=>`<tr><td>${esc(campaignParticipantLabel(item.campaign))}</td><td>${esc(resultStatusLabel(item.state))}</td><td>${item.count}</td><td>${isTrue(item.member.Peut_modifier)?"Prévue (non activée)":"Non"}</td></tr>`).join("")}</tbody></table></div>
+    <div class="form-actions"><button type="button" class="secondary-btn" data-close-space-preview>Fermer le suivi</button></div></div>`;
+   box.querySelector("[data-close-space-preview]").onclick=()=>box.remove();
+  }catch(error){box.innerHTML=`<p class="hint">Suivi indisponible : ${esc(error?.message||error)}. Aucun statut n'est affiché tant que les réponses ne sont pas lisibles.</p>`}
+  box.scrollIntoView({block:"nearest",behavior:"smooth"});
+ });
  const run=async action=>{try{await action();await renderSpaceManager(group)}catch(err){status(`Espaces : ${err?.message||err}`,true,true)}};
  $("#space-create-v440").onclick=()=>run(async()=>{
   const name=String($("#space-new-name-v440").value||"").trim();if(!name)throw new Error("Indiquez un nom d’espace.");
