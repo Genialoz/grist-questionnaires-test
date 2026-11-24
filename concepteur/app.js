@@ -4,6 +4,7 @@ import {verifierRattachements} from "./espaces-regles.mjs";
 import {verifierDiffusion} from "./diffusion-regles.mjs";
 import {resumeEspace} from "./portail-suivi.mjs";
 import {genererJetonPortail,etatAccesPortail} from "./portail-acces.mjs";
+import {creerPublicationSuivi} from "./portail-publication.mjs";
 import {rowsFromTable,sortByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 // Fetch persisted answers again before destructive definition batches, including imports.
@@ -1203,6 +1204,12 @@ async function ensureSpaceAccessColumn(){
     await applyDesignerActions([["AddColumn",SPACE_TABLE,"Jeton_portail",{type:"Text"}]]);
   }
 }
+async function ensureSpacePublicationColumn(){
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw,"Suivi_public_JSON")){
+  await applyDesignerActions([["AddColumn",SPACE_TABLE,"Suivi_public_JSON",{type:"Text"}]]);
+ }
+}
 async function loadSpaceTables(){
  const out={};
  for(const name of [SPACE_TABLE,SPACE_MEMBERS]){
@@ -1232,15 +1239,15 @@ async function renderSpaceManager(group){
   const key=memberRowId(m);
   if(!memberIndex.has(key))memberIndex.set(key,space);
  }
- host.innerHTML=`<p class="hint">Configuration interne TEST. Aucun accès au portail n'est encore publié. Chaque lien personnalisé peut appartenir à un seul espace dans cette campagne.</p>
+ host.innerHTML=`<p class="hint">Configuration TEST. Publication du suivi uniquement après contrôle des ACL ; aucune réponse détaillée n’est publiée. Chaque lien personnalisé peut appartenir à un seul espace dans cette campagne.</p>
  <div class="form-row"><label class="field" style="flex:1">Nom du nouvel espace<input id="space-new-name-v440" maxlength="120" placeholder="Ex. Service A"></label><button type="button" class="secondary-btn" id="space-create-v440">Créer un espace</button></div>
  ${spaces.length?spaces.map(space=>{
   const selected=spaceMemberRows(space,all),own=new Map(selected.map(m=>[memberRowId(m),m]));
   return `<div class="campaign-card" data-space-card="${space.id}">
     <div class="campaign-card-head"><strong>${esc(spaceName(space))}</strong><span class="badge">${selected.length} structure(s)</span></div>
-    <div class="field-help">${esc(etatAccesPortail(space))} — aucun lien d'espace n'est encore partageable.</div>
+    <div class="field-help">${esc(etatAccesPortail(space))} — lien externe à activer uniquement après tests ACL.</div>
     <div class="form-row"><button type="button" class="secondary-btn" data-space-prepare-access="${space.id}">Préparer un jeton d'accès</button>${space.Jeton_portail?`<button type="button" class="secondary-btn" data-space-revoke-access="${space.id}">Révoquer le jeton</button>`:""}</div>
-    <div class="form-row"><label class="field" style="flex:1">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-preview="${space.id}">Prévisualiser le suivi</button><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
+    <div class="form-row"><label class="field" style="flex:1">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-preview="${space.id}">Prévisualiser le suivi</button><button type="button" class="secondary-btn" data-space-publish="${space.id}">Publier le suivi (TEST)</button><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
     <div class="field-help">Associer des destinataires existants (les codes et libellés sont conservés)</div>
     <div class="campaign-structures" style="max-height:230px;overflow:auto">
     ${campaigns.map(c=>{
@@ -1259,7 +1266,7 @@ async function renderSpaceManager(group){
    if(!confirm(`Préparer un nouveau jeton pour « ${spaceName(space)} » ?\nCela invalidera tout jeton précédemment préparé. Aucun lien public ne sera activé.`))return;
    const token=genererJetonPortail();
    await ensureSpaceAccessColumn();
-   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:token}]]);
+   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:token, ...(Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")?{Suivi_public_JSON:""}:{})}]]);
    status("Jeton d'espace préparé dans TEST. Aucun accès externe n'est ouvert.",false,true);
    await renderSpaceManager(group);
   }catch(err){status(`Préparation d'accès : ${err?.message||err}`,true,true)}
@@ -1269,10 +1276,27 @@ async function renderSpaceManager(group){
    const space=spaces.find(e=>String(e.id)===String(b.dataset.spaceRevokeAccess));
    if(!space)throw new Error("Espace introuvable.");
    if(!confirm(`Révoquer le jeton préparé pour « ${spaceName(space)} » ?`))return;
-   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:""}]]);
+   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:"", ...(Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")?{Suivi_public_JSON:""}:{})}]]);
    status("Jeton révoqué. Aucun lien de saisie n'a été modifié.",false,true);
    await renderSpaceManager(group);
   }catch(err){status(`Révocation : ${err?.message||err}`,true,true)}
+ });
+ // Publication contrôlée : snapshot minimal, pas d'identifiant technique ni de lien répondant.
+ host.querySelectorAll("[data-space-publish]").forEach(button=>button.onclick=async()=>{
+  try{
+   const space=spaces.find(e=>String(e.id)===String(button.dataset.spacePublish));
+   if(!space?.Jeton_portail)throw new Error("Préparez d'abord un jeton d'espace.");
+   if(!confirm(`Actualiser la synthèse publiée de « ${spaceName(space)} » ?\nLes noms et statuts des structures deviendront lisibles pour les détenteurs du lien une fois les ACL configurées.`))return;
+   const responses=rowsFromTable(await grist.docApi.fetchTable("REPONSES"));
+   const byId=new Map(campaigns.map(c=>[String(c.id),c]));
+   const entries=spaceMemberRows(space,all).map(m=>({member:m,campaign:byId.get(memberRowId(m))}));
+   const summary=resumeEspace(entries,responses,responseMatchesCampaign,resultStatus);
+   const snapshot=creerPublicationSuivi(summary,spaceName(space),campaignName(campaigns[0]));
+   await ensureSpacePublicationColumn();
+   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Suivi_public_JSON:snapshot}]]);
+   status("Synthèse du suivi publiée dans TEST. Ne partagez aucun lien avant validation des ACL.",false,true);
+   await renderSpaceManager(group);
+  }catch(err){status(`Publication : ${err?.message||err}`,true,true)}
  });
  // Vue exclusivement interne, sans transmission de jeton ni lien vers une réponse.
  host.querySelectorAll("[data-space-preview]").forEach(button=>button.onclick=async()=>{
