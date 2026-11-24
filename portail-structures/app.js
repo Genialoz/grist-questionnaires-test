@@ -10,10 +10,12 @@ async function init(){
   // EXACTEMENT une ligne publiée. En cas de zéro ou plusieurs lignes : refus fermé.
   const optionalIframeToken=new URLSearchParams(window.location.search).get('Portail_')||'';
   if(optionalIframeToken && !/^ESP_[0-9a-f]{64}$/.test(optionalIframeToken)){fail();return;}
-  if(!window.grist?.docApi?.fetchTable){fail();return;}
+  if(!window.grist?.docApi?.fetchSelectedTable){fail();return;}
   try{
     grist.ready({requiredAccess:'read table'});
-    const table=await grist.docApi.fetchTable('ESPACES_STRUCTURES');
+    // Ne lire que la table associée au widget : autorisation minimale « Lire la table ».
+    // fetchTable('ESPACES_STRUCTURES') exigerait un accès complet, à proscrire ici.
+    const table=await grist.docApi.fetchSelectedTable();
     // Le filtrage local n'est qu'une seconde sécurité. Les ACL DOIVENT limiter les enregistrements renvoyés.
     const ids=table.id||[];const allowed=ids.map((id,i)=>({id,token:String(table.Jeton_portail?.[i]||''),active:table.Actif?.[i],data:table.Suivi_public_JSON?.[i]}))
       .filter(x=>/^ESP_[0-9a-f]{64}$/.test(x.token) && (!optionalIframeToken || x.token===optionalIframeToken) && x.active!==false && x.active!==0 && x.data);
